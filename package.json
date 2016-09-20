@@ -1,0 +1,19 @@
+{
+  "name": "js-aws",
+  "version": "0.0.1",
+  "description": "Full JavaScriptification of AWS.",
+  "main": "jsaws.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/briancsparks/js-aws.git"
+  },
+  "author": "Brian C Sparks",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/briancsparks/js-aws/issues"
+  },
+  "homepage": "https://github.com/briancsparks/js-aws#readme"
+}
