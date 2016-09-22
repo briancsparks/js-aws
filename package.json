@@ -3,6 +3,9 @@
   "version": "0.0.1",
   "description": "Full JavaScriptification of AWS.",
   "main": "jsaws.js",
+  "bin": {
+    "jsa": "lib/jsa.js"
+  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -15,5 +18,13 @@
   "bugs": {
     "url": "https://github.com/briancsparks/js-aws/issues"
   },
-  "homepage": "https://github.com/briancsparks/js-aws#readme"
+  "homepage": "https://github.com/briancsparks/js-aws#readme",
+  "dependencies": {
+    "aws-json": "0.0.1",
+    "aws-sdk": "^2.6.3",
+    "run-anywhere": "0.0.2",
+    "sgsg": "^0.8.6",
+    "shelljs": "^0.7.4",
+    "underscore": "^1.8.3"
+  }
 }
