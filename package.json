@@ -22,6 +22,7 @@
   "dependencies": {
     "aws-json": "0.0.1",
     "aws-sdk": "^2.6.3",
+    "js-mongo": "0.0.1",
     "run-anywhere": "0.0.2",
     "sgsg": "^0.8.6",
     "shelljs": "^0.7.4",
