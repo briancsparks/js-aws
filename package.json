@@ -4,7 +4,8 @@
   "description": "Full JavaScriptification of AWS.",
   "main": "jsaws.js",
   "bin": {
-    "jsa": "lib/jsa.js"
+    "jsa": "lib/jsa.js",
+    "cluster-in-mongo":"lib/clusterInMongo.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -26,6 +27,7 @@
     "run-anywhere": "0.0.2",
     "sgsg": "^0.8.6",
     "shelljs": "^0.7.4",
+    "superagent": "^2.3.0",
     "underscore": "^1.8.3"
   }
 }
