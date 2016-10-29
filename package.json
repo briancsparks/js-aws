@@ -2,7 +2,7 @@
   "name": "js-aws",
   "version": "0.0.1",
   "description": "Full JavaScriptification of AWS.",
-  "main": "jsaws.js",
+  "main": "lib/jsaws.js",
   "bin": {
     "jsa": "lib/jsa.js",
     "cluster-in-mongo":"lib/clusterInMongo.js"
