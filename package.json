@@ -5,7 +5,7 @@
   "main": "lib/jsaws.js",
   "bin": {
     "jsa": "lib/jsa.js",
-    "cluster-in-mongo":"lib/clusterInMongo.js"
+    "cluster-in-mongo": "lib/clusterInMongo.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
@@ -24,6 +24,7 @@
     "aws-json": "0.0.1",
     "aws-sdk": "^2.6.3",
     "js-mongo": "0.0.1",
+    "routes": "^2.1.0",
     "run-anywhere": "0.0.2",
     "sgsg": "^0.8.6",
     "shelljs": "^0.7.4",
