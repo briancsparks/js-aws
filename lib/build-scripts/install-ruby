@@ -1,0 +1,8 @@
+#!/bin/bash -e
+
+mkdir -p ~/zz_packages && cd $_
+curl 'http://ftp.ruby-lang.org/pub/ruby/2.4/ruby-2.4.0.tar.gz' | tar -xzv
+cd ruby-2.4.0/
+
+./configure && &make -j`grep -c ^processor /proc/cpuinfo` && sudo make install
+
