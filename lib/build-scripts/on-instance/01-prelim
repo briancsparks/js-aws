@@ -1,5 +1,37 @@
 #!/bin/bash -e
 
+username="$(whoami)"
+
+reboot() {
+  echo "Rebooting after $1"
+  sudo shutdown -r now
+  sleep 2
+  exit 253
+}
+
+check_reboot() {
+
+  # Reboot?
+  if [[ -f /var/run/reboot-required ]]; then
+    reboot "$@"
+  fi
+}
+
+set_env() {
+  # ----- /etc/environment -----
+
+  # Kill the item, if it is already in the file
+  sudo perl -ni -e "print unless /^${1}=/" /etc/environment
+
+  # Then, append it
+  echo "$1=$2" | sudo tee -a /etc/environment > /dev/null
+
+  # Finally, remove blank lines
+  sudo perl -ni -e 'print unless /^$/' /etc/environment
+
+}
+
+
 # ---------- Nothing works without 777 /tmp ----------
 if ! stat /tmp | egrep -i '^access:.+777'; then
   sudo chmod 777 /tmp
@@ -11,5 +43,199 @@ if ! stat /tmp | egrep -i '^access:.+777'; then
 fi
 
 [[ -d ~/zz_packages ]] || mkdir -p ~/zz_packages
+
+# ---------- Initial dirs and stuff ----------
+if ! [[ -f ~/zz_packages/prelim ]]; then
+  if ./jsaws-build-block "dirs-n-drives" "Setting up preliminary stuff"; then
+
+    # Make certain dirs available
+    sudo mkdir -p /var/log
+    sudo chown root:admin /var     && sudo chmod g+w /var
+    sudo chown root:admin /var/log && sudo chmod g+w /var/log
+
+    mkdir -p ~/local/bin
+    sudo perl -pi -e "s/PATH=\"/PATH=\"\/home\/${username}\/local\/bin:/g" /etc/environment
+    export PATH="${HOME}/local/bin:$PATH"
+
+    touch ~/zz_packages/prelim
+    ./jsaws-build-block "dirs-n-drives" "Setting up preliminary stuff"
+  fi
+fi
+
+# ---------- Install AWS CLI tools ----------
+if ./jsaws-build-block "aws-tools" "Installing AWS CLI tools"; then
+
+  # setup ~/.cache ahead of time with the proper permissions
+  mkdir -p ~/.cache
+  chmod a+rx ~/.cache
+  chmod ug+w ~/.cache
+
+  # AWS cli
+  mkdir -p ~/zz_packages && cd $_
+  curl -s -O 'https://bootstrap.pypa.io/get-pip.py'
+  sudo -H python get-pip.py
+  sudo -H pip install awscli
+  sudo -H pip install saws
+
+  # Now that we have the aws CLI
+  curl -sO 'https://s3.amazonaws.com/aws-xray-assets.us-east-1/xray-daemon/aws-xray-daemon-1.x.deb'
+  sudo dpkg -i aws-xray-daemon-1.x.deb
+
+  ./jsaws-build-block "aws-tools" "done"
+fi
+
+# ---------- Get git ----------
+if ! which git > /dev/null; then
+  if ./jsaws-build-block "install-git" "Installing git"; then
+
+    # git
+    sudo apt-get update && sudo apt-get install -y git curl
+    ./jsaws-build-block "install-git" "done"
+  fi
+fi
+
+# ---------- Validate against github ----------
+if ! git config --global user.email; then
+  if ./jsaws-build-block "validate-github" "Validate with github"; then
+
+    ssh -o "StrictHostKeyChecking no" git@github.com || true
+    #git config --global user.email "yoshi.t.munchakoopas@hp.com"
+    #git config --global user.name "Yoshi T. Munchakoopas"
+
+    ./jsaws-build-block "validate-github" "done"
+  fi
+fi
+
+# ---------- Get Node.js ----------
+if ! which node > /dev/null; then
+  if ./jsaws-build-block "nodejs" "Installing node.js"; then
+
+    # Node dependencies -
+    sudo apt-get update
+    sudo apt-get install -y curl ntp build-essential autoconf libc6-dev automake libtool bison | \
+        tee -a ~/tmp/buildout/log/apt-get-for-node-deps.log
+
+    # Node.js
+    curl -s https://deb.nodesource.com/gpgkey/nodesource.gpg.key | sudo apt-key add -
+
+    echo 'deb https://deb.nodesource.com/node_6.x trusty main' | sudo tee /etc/apt/sources.list.d/nodesource.list
+    sudo apt-get update && sudo apt-get install -y nodejs
+
+    # Update so that "npm install -g" does not require sudo -- see https://docs.npmjs.com/getting-started/fixing-npm-permissions
+    export NPM_CONFIG_PREFIX=/home/${username}/.npm-global
+    mkdir -p $NPM_CONFIG_PREFIX
+    set_env NPM_CONFIG_PREFIX $NPM_CONFIG_PREFIX
+
+    # Put NODE_PATH in the environment
+    export NODE_PATH="$(npm root -g)"
+    set_env NODE_PATH "$NODE_PATH"
+
+    # Put the new npm global in the path
+    sudo perl -pi -e "s/PATH=\"/PATH=\"\/home\/${username}\/.npm-global\/bin:/g" /etc/environment
+    export PATH="${NPM_CONFIG_PREFIX}/bin:$PATH"
+
+    # Put yarn bin at ~/local/bin
+    npm install -g yarn
+    yarn config set prefix $HOME/local
+
+    ./jsaws-build-block "nodejs" "done"
+
+    # Reboot?
+    check_reboot "installing Node.js deps"
+  fi
+fi
+
+# ---------- First big apt-get ----------
+if ./jsaws-build-block "first-big-apt-get" "Big first apt-get"; then
+
+  # Install big, basic stuff
+  sudo apt-get update
+  sudo apt-get install -y \
+      apt-transport-https curl tree ntp htop jq \
+      libreadline6 git-core build-essential openssl nmap mercurial socat gawk libcurl4-openssl-dev ncurses-dev libncurses5-dev \
+      libgdbm-dev libyaml-dev libffi-dev libreadline6-dev zlib1g zlib1g-dev libssl-dev autoconf libc6-dev automake libtool \
+      bison subversion pkg-config libperl-dev liblzma-dev libpcre3 libpcre3-dev libgd-tools libsqlite3-dev sqlite3 libxml2-dev \
+      libxslt-dev libmysqlclient-dev cscope exuberant-ctags realpath unzip libcairo2 libcairo2-dev libjpeg-dev
+
+  ./jsaws-build-block "first-big-apt-get" "done"
+
+  # Reboot?
+  check_reboot "big initial install"
+fi
+
+# ---------- nginx ----------
+if [[ -n $install_nginx ]]; then
+
+  if ./jsaws-build-block "build-nginx" "NGINX"; then
+
+    mkdir -p ~/zz_packages && cd $_
+    #aws s3 cp "s3://${bucket}/buildout/packages/nginx-1.9.15.tar.gz" ./
+    #aws s3 cp "s3://${bucket}/buildout/packages/openssl-1.0.1u.tar.gz" ./
+    #aws s3 cp "s3://${bucket}/buildout/packages/pcre-8.38.tar.gz" ./
+    #aws s3 cp "s3://${bucket}/buildout/packages/zlib-1.2.8.tar.gz" ./
+
+    curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/zlib-1.2.8.tar.gz"
+    curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/pcre-8.38.tar.gz"
+    curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/openssl-1.0.1u.tar.gz"
+    curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/nginx-1.9.15.tar.gz"
+
+    tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'openssl.*\.tar\.gz$')"
+    tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'pcre.*\.tar\.gz$')"
+    tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'zlib.*\.tar\.gz$')"
+    tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'nginx.*\.tar\.gz$')"
+
+    ln -fs "$(find ./ -maxdepth 1 -type d | egrep 'nginx')" nginx && cd $_
+
+    ./configure \
+      --prefix=/usr/local/nginx \
+      --conf-path=/etc/nginx/nginx.conf \
+      --http-log-path=/var/log/nginx/access.log \
+      --error-log-path=/var/log/nginx/error.log \
+      --pid-path=/var/run/nginx.pid \
+      --lock-path=/var/lock/nginx.lock \
+      --http-client-body-temp-path=/var/tmp/nginx/client \
+      --http-proxy-temp-path=/var/tmp/nginx/proxy \
+      --user=www-data \
+      --group=www-data \
+      --with-http_realip_module \
+      --with-openssl=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep openssl) \
+      --with-pcre \
+      --with-pcre=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep pcre) \
+      --with-zlib=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep zlib) \
+      --with-http_ssl_module \
+      --with-http_perl_module \
+      --with-http_stub_status_module
+
+    # Make it!
+    make
+
+    # DO NOT use -j on these makes
+    sudo make install
+
+    # Make a link to the nginx binary from sbin
+    test -f /usr/local/nginx/sbin/nginx && sudo ln -fs /usr/local/nginx/sbin/nginx /usr/sbin/nginx
+
+    # Give ownership of logs dirs
+    sudo mkdir -p /var/log/nginx
+    sudo touch /var/log/nginx/access.log
+    sudo touch /var/log/nginx/error.log
+    sudo chown -R www-data:www-data /var/log/nginx
+
+    cd
+
+    # Make dirs
+    sudo mkdir -p /var/tmp/nginx && sudo chown -R www-data:www-data $_
+    sudo mkdir -p /etc/nginx/sites-available
+    sudo mkdir -p /etc/nginx/sites-enabled
+
+    mkdir -p ~/www
+
+    cd
+    ./jsaws-build-block "build-nginx" "done"
+  fi
+fi
+
+
+
 
 

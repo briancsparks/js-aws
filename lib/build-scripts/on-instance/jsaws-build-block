@@ -1,0 +1,54 @@
+#!/bin/bash -e
+
+#
+# Use like this:
+#
+#   if jsaws-build-block "name-of-block"; then
+#     ...
+#     jsaws-build-block "name-of-block" done
+#   fi
+
+block_name="$1"
+shift
+
+# Write "done" to the log file
+if [[ $# > 0 ]]; then
+  if [[ $1 == done ]]; then
+    echo "done: ${block_name}" >> ~/zz_packages/build-logs/build-progress.log
+    echo "jsaws-build-block-done=${block_name}"
+    exit 0
+  fi
+
+  if [[ $1 == erase ]]; then
+    cat ~/zz_packages/build-logs/build-progress.log | egrep -v ${block_name} > /tmp/build-progress.log
+    mv /tmp/build-progress.log ~/zz_packages/build-logs/build-progress.log
+    echo "jsaws build  block-erase=${block_name}"
+    exit 0
+  fi
+fi
+
+# Should we do this block?
+if [[ -f ~/zz_packages/build-logs/build-progress.log ]]; then
+  if egrep -q "done: ${block_name}" ~/zz_packages/build-logs/build-progress.log; then
+
+    # No, we do not need to do the block
+    echo "--------------------------- skipping $@, it is already done"
+    exit 1
+  fi
+fi
+
+if [[ $# > 0 ]]; then
+  # Second param, but not 'done' -- its a message
+  echo;echo;echo
+  echo "======================================================================================"
+  echo "$@"
+  echo "======================================================================================"
+  echo "jsaws-build-block=${block_name}"
+  echo;echo;echo
+fi
+
+# Yes, we need to do the block
+echo "running: ${block_name}" >> ~/zz_packages/build-logs/build-progress.log
+
+exit 0
+

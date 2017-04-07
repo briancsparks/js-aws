@@ -1,0 +1,46 @@
+#!/bin/bash -e
+
+die() {
+  echo "Usage: $0 IP msg" 2>&1
+  exit 1
+}
+
+sshix() {
+  ssh -A -o "StrictHostKeyChecking no" -o "UserKnownHostsFile=/dev/null" "$@"
+}
+
+scpix() {
+  scp -o "StrictHostKeyChecking no" -o "UserKnownHostsFile=/dev/null" "$@"
+}
+
+fn() {
+  DIR="$1"
+  shift
+  find $DIR -type f | egrep -v node_modules | egrep "$@"
+}
+
+wait_for_start() {
+  echo "wait for start |${1}| whoami"
+  while ! sshix -o ConnectTimeout=5 ${1} whoami; do
+    sleep 3
+    echo "wait for start |${1}| whoami"
+  done
+  sleep 3
+}
+
+ip="$1"
+msg="$2"
+
+[[ -n $ip  ]] || die
+[[ -n $msg ]] || die
+
+start_dir="$(dirname $0)"
+
+wait_for_start $ip
+
+sshix $ip 'mkdir -p zz_packages/boot zz_packages/build-logs'
+scpix $ip "${start_dir}/*" "${ip}:~/zz_packages/boot/"
+sshix $ip './zz_packages/boot/aa-build-all'
+
+ra invoke `fn ../../ ssh\.js$` sshRun --ip=${ip} --command=./zz_packages/boot/aa-build-all            --message="${msg}-build"
+
