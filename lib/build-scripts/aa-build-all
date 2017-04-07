@@ -1,4 +1,5 @@
 #!/bin/bash -e
 
+ls | egrep -v aa-build-all | sort
 
 

@@ -1,0 +1,15 @@
+#!/bin/bash -e
+
+# ---------- Nothing works without 777 /tmp ----------
+if ! stat /tmp | egrep -i '^access:.+777'; then
+  sudo chmod 777 /tmp
+  echo "Must log back in"
+
+  # We are going to exit the script, but we are not done and we are not rebooting
+  sleep 1
+  exit 253
+fi
+
+[[ -d ~/zz_packages ]] || mkdir -p ~/zz_packages
+
+
