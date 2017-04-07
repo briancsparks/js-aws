@@ -4,8 +4,7 @@
   "description": "Full JavaScriptification of AWS.",
   "main": "lib/jsaws.js",
   "bin": {
-    "jsa": "lib/jsa.js",
-    "cluster-in-mongo": "lib/clusterInMongo.js"
+    "jsa": "lib/jsa.js"
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
