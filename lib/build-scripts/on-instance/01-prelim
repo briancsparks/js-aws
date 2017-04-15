@@ -1,5 +1,9 @@
 #!/bin/bash -e
 
+#
+# Unfortunately, we cannot use cli-shezargs
+#
+
 username="$(whoami)"
 
 reboot() {
@@ -31,7 +35,7 @@ set_env() {
 
 }
 
-bucket_ns="$1"
+bucket_namespace="$1"
 
 my_keyname="$(curl -s http://169.254.169.254/latest/meta-data/public-keys/ | cut -d= -f2)"
 if [[ $my_keyname =~ prod ]]; then
@@ -44,11 +48,11 @@ fi
 
 # Which S3 bucket should we get things from?
 if [[ -n $is_dev ]]; then
-  bucket="${bucket_ns}-deploy"
-  http_bucket="${bucket_ns}-deploy"
+  bucket="${bucket_namespace}-deploy"
+  http_bucket="${bucket_namespace}-deploy"
 elif [[ -n $is_prod ]]; then
-  bucket="${bucket_ns}-prod-deploy"
-  http_bucket="${bucket_ns}-deploy"
+  bucket="${bucket_namespace}-prod-deploy"
+  http_bucket="${bucket_namespace}-deploy"
 fi
 
 

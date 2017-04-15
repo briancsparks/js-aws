@@ -2,81 +2,45 @@
 
 eval "$(cli-shezargs $@)"
 
-#sshix() {
-#  ssh -A -o "StrictHostKeyChecking no" -o "UserKnownHostsFile=/dev/null" "$@"
-#}
-#
-#scpix() {
-#  scp -o "StrictHostKeyChecking no" -o "UserKnownHostsFile=/dev/null" "$@"
-#}
-#
-#fn() {
-#  DIR="$1"
-#  shift
-#  find $DIR -type f | egrep -v node_modules | egrep "$@"
-#}
-#
-#wait_for_start() {
-#  echo "wait for start |${1}| whoami"
-#  while ! sshix -o ConnectTimeout=5 ${1} whoami; do
-#    sleep 3
-#    echo "wait for start |${1}| whoami"
-#  done
-#  sleep 3
-#}
-
 die() {
   echo "Usage: $0 IP dbIp utilIp namespace color key instance-type aws-image-id build-num msg" 2>&1
   echo ""
-  echo "          10.11.23.91 10.11.21.229 10.11.21.4 mario teal mario_demo c4.xlarge trusty 20 'tester'" 2>&1
-  echo "          10.11.23.91 10.11.21.229 10.11.21.4 mario teal mario_demo t2.large  trusty 20 'tester'" 2>&1
+  echo "          --ip=10.11.23.91 --db=10.11.21.229 --util=10.11.21.4 --namespace=mario --color=teal --key=mario_demo --instance-type=c4.xlarge --image-id=trusty --build-number=20 --msg='tester' --bucket-namespace=mobilewebprint" 2>&1
+  echo "          --ip=10.11.23.91 --db=10.11.21.229 --util=10.11.21.4 --namespace=mario --color=teal --key=mario_demo --instance-type=t2.large  --image-id=trusty --build-number=20 --msg='tester' --bucket-namespace=mobilewebprint" 2>&1
+  echo ""
+  echo "  Options:"
+  echo ""
+  echo "          --dry-run"
+  echo "          --no-ruby"
+  echo "          --skip-ami"
+  echo "          --no-terminate"
   exit 1
 }
 
 start_dir="$(dirname $0)"
 
-set +e
-ip="$1";      shift;
-db="$1";      shift;
-util="$1";    shift;
-ns="$1";      shift;
-co="$1";      shift;
-key="$1";     shift;
-itype="$1";   shift;
-imgid="$1";   shift;
-bldnum="$1";  shift;
-msg="$1" ;    shift;
+[[ -n $ip                   ]] || die
+[[ -n $db                   ]] || die
+[[ -n $util                 ]] || die
+[[ -n $namespace            ]] || die
+[[ -n $color                ]] || die
+[[ -n $key                  ]] || die
+[[ -n $instance_type        ]] || die
+[[ -n $image_id             ]] || die
+[[ -n $build_number         ]] || die
+[[ -n $msg                  ]] || die
+[[ -n $bucket_namespace     ]] || die
 
-if [[ $# -gt 0 ]]; then
-  x1="$1"
-  shift
-fi
-
-# TODO: Does build-num matter?
-
-[[ -n $ip       ]] || die
-[[ -n $db       ]] || die
-[[ -n $util     ]] || die
-[[ -n $ns       ]] || die
-[[ -n $co       ]] || die
-[[ -n $key      ]] || die
-[[ -n $itype    ]] || die
-[[ -n $imgid    ]] || die
-[[ -n $bldnum   ]] || die
-[[ -n $msg      ]] || die
-
-[[ $x1 == --dry-run ]] && dry_run="$x1"
-set -e
-
-run_instance_params="--db=$db"
+run_instance_params="$run_instance_params --db=$db"
 run_instance_params="$run_instance_params --util=$util"
-run_instance_params="$run_instance_params --namespace=$ns"
-run_instance_params="$run_instance_params --color=$co"
+run_instance_params="$run_instance_params --namespace=$namespace"
+run_instance_params="$run_instance_params --color=$color"
 run_instance_params="$run_instance_params --key=$key"
 run_instance_params="$run_instance_params --ip=${ip}"
-run_instance_params="$run_instance_params --instance-type=$itype"
-run_instance_params="$run_instance_params --image-id=$imgid"
+run_instance_params="$run_instance_params --instance-type=$instance_type"
+run_instance_params="$run_instance_params --image-id=$image_id"
 
+# -------------------- Run Instance --------------------
 run_instance_result="/tmp/js-aws-boot-instance-$$.json"
 if [[ -z $dry_run ]]; then
        ra invoke `fn ${start_dir}/../../ ec2\.js$` runInstance $run_instance_params --first-buildup --jsaws-boot | tee $run_instance_result | underscore print --color
@@ -85,23 +49,28 @@ else
   exit 0
 fi
 
+# Get the actual IP from the result
 ip="$(cat $run_instance_result | underscore select '.InstanceId ~ .PrivateIpAddress' --outfmt=text)"
 instance_id="$(cat $run_instance_result | underscore select '.PrivateIpAddress ~ .InstanceId' --outfmt=text)"
 
 wait_for_start $ip
 
+# Copy buildout scripts
 sshix $ip 'mkdir -p zz_packages/boot zz_packages/build-logs'
 scpix -r ${start_dir}/* "${ip}:~/zz_packages/boot/"
 
-ra invoke `fn ${start_dir}/../../ ssh\.js$` sshRun --ip=${ip} --command="./zz_packages/boot/on-instance/aa-build-all mobilewebprint"            --message="${msg}-build"
+# -------------------- aa-build-all --------------------
 
-#exit 0
+                     build_all_params="$build_all_params ${bucket_namespace}"
+[[ -n $no_ruby ]] && build_all_params="$build_all_params --no-ruby"
 
-# Now make an AMI
-# tag="--tag-${namespace}-service=${service}"
+ra invoke `fn ${start_dir}/../../ ssh\.js$` sshRun --ip=${ip} --command="./zz_packages/boot/on-instance/aa-build-all ${build_all_params}"            --message="${msg}-build"
+
+# -------------------- Create AMI ----------------------
+[[ -n $skip_ami ]] && exit 0
 
 create_ami_result="/tmp/js-aws-create-ami-$$.json"
-time ra invoke `fn ${start_dir}/../../ ec2\.js$` createAmi --instance-id=${instance_id} --description="jsaws-built" --name="jsaws-base-${bldnum}-net" \
+time ra invoke `fn ${start_dir}/../../ ec2\.js$` createAmi --instance-id=${instance_id} --description="jsaws-built" --name="jsaws-base-${build_number}-net" \
       | tee $create_ami_result \
       | underscore print --color
 
@@ -111,7 +80,10 @@ aws ec2 create-tags --resources $image_id --tags "Key=jsaws:readyFor,Value=test"
 sleep 5
 wait_for_start $ip
 
-# Terminate the instance that created the AMI
-ra invoke lib/ec2/ec2.js terminateInstance --instance-id=${instance_id} | underscore print --color
+# -------------------- Terminate Instance ----------------------
+if [[ -z $no_terminate ]]; then
+  ra invoke lib/ec2/ec2.js terminateInstance --instance-id=${instance_id} | underscore print --color
+fi
+
 
 
