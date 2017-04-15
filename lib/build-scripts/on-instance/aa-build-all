@@ -1,5 +1,13 @@
 #!/bin/bash -e
 
-ls | egrep '^[0-9][0-9]' | egrep -v aa-build-all | sort
+script_dir="$(dirname $0)"
+sudo cp "$script_dir/jsaws-build-block" /usr/local/bin
 
+scripts="$(ls $script_dir | egrep '^[0-9][0-9]' | egrep -v aa-build-all | sort)"
+
+for script in $scripts; do
+  echo "--------------------------------------------------------------------------------------------- ${script_dir}/$script"
+  ${script_dir}/${script} "$@"
+
+done
 

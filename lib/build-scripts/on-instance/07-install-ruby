@@ -13,13 +13,25 @@ if [[ $command == packages ]]; then
 
 elif [[ $command == install ]]; then
 
-  # Install packages
-  sudo apt-get update && sudo apt-get install -y "$($0 packages)"
+  if jsaws-build-block "ruby" "Installing Ruby"; then
+    if ! which ruby > /dev/null; then
 
-  mkdir -p ~/zz_packages && cd $_
-  curl 'http://ftp.ruby-lang.org/pub/ruby/2.4/ruby-2.4.0.tar.gz' | tar -xzv
-  cd ruby-2.4.0/
+      # Install packages
+      sudo apt-get update && sudo apt-get install -y "$($0 packages)"
 
-  ./configure && make -j`grep -c ^processor /proc/cpuinfo` && sudo make install
+      mkdir -p ~/zz_packages && cd $_
+      curl 'http://ftp.ruby-lang.org/pub/ruby/2.4/ruby-2.4.0.tar.gz' | tar -xzv
+      cd ruby-2.4.0/
+
+      ./configure && make -j`grep -c ^processor /proc/cpuinfo` && sudo make install
+    fi
+
+    jsaws-build-block "ruby" "done"
+  fi
+
+else
+
+  # Did not understand the command -- just default to installing
+  $0 install "$@"
 fi
 
