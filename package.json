@@ -23,6 +23,7 @@
     "debug": "^2.6.0",
     "express": "^4.14.0",
     "js-mongo": "https://github.com/briancsparks/js-mongo/tarball/master",
+    "nginx-json": "https://github.com/briancsparks/nginx-json/tarball/master",
     "routes": "^2.1.0",
     "run-anywhere": "https://github.com/briancsparks/run-anywhere/tarball/master",
     "sgsg": "https://github.com/briancsparks/sg/tarball/master",

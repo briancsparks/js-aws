@@ -118,8 +118,10 @@ if jsaws-build-block "validate-github" "Validate with github"; then
   if ! git config --global user.email; then
 
     ssh -o "StrictHostKeyChecking no" git@github.com || true
-    #git config --global user.email "yoshi.t.munchakoopas@hp.com"
-    #git config --global user.name "Yoshi T. Munchakoopas"
+    git config --global push.default simple
+
+    git config --global user.email "yoshi.t.munchakoopas@hp.com"
+    git config --global user.name "Yoshi T. Munchakoopas"
 
   fi
 
