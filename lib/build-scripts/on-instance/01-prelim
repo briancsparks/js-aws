@@ -35,6 +35,7 @@ set_env() {
 
 }
 
+osversion="$(lsb_release -c | awk '{print $2}')"
 bucket_namespace="$1"
 
 my_keyname="$(curl -s http://169.254.169.254/latest/meta-data/public-keys/ | cut -d= -f2)"
@@ -118,11 +119,13 @@ if jsaws-build-block "validate-github" "Validate with github"; then
   if ! git config --global user.email; then
 
     ssh -o "StrictHostKeyChecking no" git@github.com || true
-    git config --global push.default simple
 
     git config --global user.email "yoshi.t.munchakoopas@hp.com"
     git config --global user.name "Yoshi T. Munchakoopas"
 
+    if [[ $osversion != precise ]]; then
+      git config --global push.default simple
+    fi
   fi
 
   jsaws-build-block "validate-github" "done"
@@ -139,7 +142,7 @@ if jsaws-build-block "nodejs" "Installing node.js"; then
     # Node.js
     curl -s https://deb.nodesource.com/gpgkey/nodesource.gpg.key | sudo apt-key add -
 
-    echo 'deb https://deb.nodesource.com/node_6.x trusty main' | sudo tee /etc/apt/sources.list.d/nodesource.list
+    echo "deb https://deb.nodesource.com/node_6.x ${osversion} main" | sudo tee /etc/apt/sources.list.d/nodesource.list
     sudo apt-get update && sudo apt-get install -y nodejs
 
     # Update so that "npm install -g" does not require sudo -- see https://docs.npmjs.com/getting-started/fixing-npm-permissions
