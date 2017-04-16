@@ -19,6 +19,7 @@
   "dependencies": {
     "aws-json": "https://github.com/briancsparks/aws-json/tarball/master",
     "aws-sdk": "^2.6.3",
+    "aws-xray-sdk": "^1.0.6-beta",
     "body-parser": "^1.15.2",
     "debug": "^2.6.0",
     "express": "^4.14.0",
