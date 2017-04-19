@@ -3,6 +3,7 @@
 eval "$(cli-shezargs $@)"
 
 [[ -n $no_ruby ]] && exit 0
+[[ -z $ruby    ]] && exit 0
 
 if [[ $command == packages ]]; then
 
