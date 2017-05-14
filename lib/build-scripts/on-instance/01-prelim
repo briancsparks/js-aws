@@ -254,8 +254,10 @@ if [[ $service != base ]]; then
   fi
 fi
 
-# ---------- Ansible ----------
+# ---------- Admin ----------
 if env | egrep -i '_service=admin'; then
+
+  # ---------- Ansible ----------
   if jsaws-build-block "ansible" "Installing ansible"; then
     if ! which ansible > /dev/null; then
       sudo DEBIAN_FRONTEND=noninteractive apt-get install software-properties-common
@@ -264,8 +266,28 @@ if env | egrep -i '_service=admin'; then
       sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
       sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ansible
     fi
+
+    jsaws-build-block "ansible" "done"
   fi
-  jsaws-build-block "ansible" "done"
+
+  # ---------- Admin repos ----------
+  if jsaws-build-block "admin-repos" "Getting repos for admin"; then
+    if ! [[ -d $HOME/dev/js-aws ]]; then
+
+      mkdir -p ~/dev && cd $_
+
+      [[ -d sgsg         ]] || (git clone git@github.com:briancsparks/sg sgsg       && cd sgsg          && npm install --production    && npm link --production)
+      [[ -d js-cluster   ]] || (git clone git@github.com:briancsparks/js-cluster    && cd js-cluster    && npm install --production    && npm link --production)
+      [[ -d run-anywhere ]] || (git clone git@github.com:briancsparks/run-anywhere  && cd run-anywhere  && npm install --production    && npm link --production)
+      [[ -d js-aws       ]] || (git clone git@github.com:briancsparks/js-aws        && cd js-aws        && npm install --production    && npm link --production)
+      [[ -d mario-js     ]] || (git clone git@github.com:IPGPTP/mario-js            && cd mario-js      && npm install --production    && npm link --production)
+
+      git clone git@github.com:IPGPTP/mario_util            mario-util
+
+    fi
+
+    jsaws-build-block "admin-repos" "done"
+  fi
 fi
 
 # ---------- nginx ----------
