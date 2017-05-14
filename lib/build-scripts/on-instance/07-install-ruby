@@ -5,32 +5,20 @@ eval "$(cli-shezargs $@)"
 [[ -n $no_ruby ]] && exit 0
 [[ -z $ruby    ]] && exit 0
 
-if [[ $command == packages ]]; then
+if jsaws-build-block "ruby" "Installing Ruby"; then
+  if ! which ruby > /dev/null; then
 
-  # echo all the packages we are dependent on
-  echo "build-essential"
+    # Install packages
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential
 
-elif [[ $command == install ]]; then
+    mkdir -p ~/zz_packages && cd $_
+    curl 'http://ftp.ruby-lang.org/pub/ruby/2.4/ruby-2.4.0.tar.gz' | tar -xzv
+    cd ruby-2.4.0/
 
-  if jsaws-build-block "ruby" "Installing Ruby"; then
-    if ! which ruby > /dev/null; then
-
-      # Install packages
-      sudo apt-get update && sudo apt-get install -y "$($0 --command=packages)"
-
-      mkdir -p ~/zz_packages && cd $_
-      curl 'http://ftp.ruby-lang.org/pub/ruby/2.4/ruby-2.4.0.tar.gz' | tar -xzv
-      cd ruby-2.4.0/
-
-      ./configure && make -j`grep -c ^processor /proc/cpuinfo` && sudo make install
-    fi
-
-    jsaws-build-block "ruby" "done"
+    ./configure && make -j`grep -c ^processor /proc/cpuinfo` && sudo make install
   fi
 
-else
-
-  # Did not understand the command -- just default to installing
-  $0 --command=install "$@"
+  jsaws-build-block "ruby" "done"
 fi
 

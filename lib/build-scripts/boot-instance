@@ -3,10 +3,10 @@
 eval "$(cli-shezargs $@)"
 
 die() {
-  echo "Usage: $0 IP dbIp utilIp namespace color key instance-type aws-image-id build-num msg" 2>&1
+  echo "Usage: $0 IP dbIp utilIp namespace color key instance-type aws-image-id build-num service" 2>&1
   echo ""
-  echo "          --ip=10.11.23.91 --db=10.11.21.229 --util=10.11.21.4 --namespace=mario --color=teal --key=mario_demo --instance-type=c4.xlarge --image-id=trusty --build-number=20 --msg='tester' --bucket-namespace=mobilewebprint" 2>&1
-  echo "          --ip=10.11.23.91 --db=10.11.21.229 --util=10.11.21.4 --namespace=mario --color=teal --key=mario_demo --instance-type=t2.large  --image-id=trusty --build-number=20 --msg='tester' --bucket-namespace=mobilewebprint" 2>&1
+  echo "          --ip=10.11.23.91 --db=10.11.21.229 --util=10.11.21.4 --namespace=mario --color=teal --key=mario_demo --instance-type=c4.xlarge --image-id=xenial --what=admin --bucket-namespace=mobilewebprint" 2>&1
+  echo "          --ip=10.11.23.91 --db=10.11.21.229 --util=10.11.21.4 --namespace=mario --color=teal --key=mario_demo --instance-type=t2.large  --image-id=xenial --what=bastion --bucket-namespace=mobilewebprint" 2>&1
   echo ""
   echo "  Options:"
   echo ""
@@ -14,21 +14,24 @@ die() {
   echo "          --no-ruby"
   echo "          --skip-ami"
   echo "          --no-terminate"
+  echo "          --build-number=20"
   exit 1
 }
 
 start_dir="$(dirname $0)"
 
+[[ -n $namespace            ]] || die
+
+[[ -n $build_number         ]] || build_number="$(ra invoke `fn ~/dev/ ec2\.js$` getNextBuildNumber --ns=${namespace} | underscore select '.build' --outfmt=text)"
+[[ -n $image_id             ]] || image_id="xenial"
+
 [[ -n $ip                   ]] || die
 [[ -n $db                   ]] || die
 [[ -n $util                 ]] || die
-[[ -n $namespace            ]] || die
 [[ -n $color                ]] || die
 [[ -n $key                  ]] || die
 [[ -n $instance_type        ]] || die
-[[ -n $image_id             ]] || die
 [[ -n $build_number         ]] || die
-[[ -n $msg                  ]] || die
 [[ -n $bucket_namespace     ]] || die
 
 run_instance_params="$run_instance_params --db=$db"
@@ -61,10 +64,15 @@ scpix -r ${start_dir}/* "${ip}:~/zz_packages/boot/"
 
 # -------------------- aa-build-all --------------------
 
-                     build_all_params="$build_all_params ${bucket_namespace}"
-[[ -n $no_ruby ]] && build_all_params="$build_all_params --no-ruby"
+                         build_all_params="$build_all_params ${bucket_namespace} ${service} --namespace=${namespace} --stack=${stack} --service=${service}"
+[[ -n $no_ruby    ]] &&  build_all_params="$build_all_params --no-ruby"
+[[ -n $ruby       ]] &&  build_all_params="$build_all_params --ruby"
+[[ -n $no_jenkins ]] &&  build_all_params="$build_all_params --no-jenkins"
+[[ -n $jenkins    ]] &&  build_all_params="$build_all_params --jenkins"
+[[ -n $no_android ]] &&  build_all_params="$build_all_params --no-android"
+[[ -n $android    ]] &&  build_all_params="$build_all_params --android"
 
-ra invoke `fn ${start_dir}/../../ ssh\.js$` sshRun --ip=${ip} --command="./zz_packages/boot/on-instance/aa-build-all ${build_all_params}"            --message="${msg}-build"
+ra invoke `fn ${start_dir}/../../ ssh\.js$` sshRun --ip=${ip} --command="./zz_packages/boot/on-instance/aa-build-all ${build_all_params}" "--message=${service}-build"
 
 # -------------------- Create AMI ----------------------
 [[ -n $skip_ami ]] && exit 0

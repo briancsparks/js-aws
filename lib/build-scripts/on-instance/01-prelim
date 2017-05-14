@@ -37,6 +37,21 @@ set_env() {
 
 osversion="$(lsb_release -c | awk '{print $2}')"
 bucket_namespace="$1"
+service="$2"
+
+# What should we run?
+install_nginx="1"
+if [[ $service =~ bastion ]]; then
+  unset install_nginx
+fi
+
+echo "================== $service Install nginx: $install_nginx ================================="
+
+if [[ $(lsb_release -c) =~ xenial ]]; then
+  python_cmd="python3"
+else
+  python_cmd="python"
+fi
 
 my_keyname="$(curl -s http://169.254.169.254/latest/meta-data/public-keys/ | cut -d= -f2)"
 if [[ $my_keyname =~ prod ]]; then
@@ -74,8 +89,9 @@ if jsaws-build-block "prelim" "Setting up preliminary stuff"; then
   if ! [[ -f ~/zz_packages/prelim ]]; then
 
     # Update
-    sudo apt-get update && sudo apt-get upgrade -y
-    sudo apt-get install -y git curl  ntp build-essential autoconf libc6-dev automake libtool bison
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git curl  ntp build-essential autoconf libc6-dev automake libtool bison
 
     # Make certain dirs available
     sudo mkdir -p /var/log
@@ -103,13 +119,9 @@ if jsaws-build-block "aws-tools" "Installing AWS CLI tools"; then
   # AWS cli
   mkdir -p ~/zz_packages && cd $_
   curl -s -O 'https://bootstrap.pypa.io/get-pip.py'
-  sudo -H python get-pip.py
+  sudo -H ${python_cmd} get-pip.py
   sudo -H pip install awscli
   sudo -H pip install saws
-
-  # Now that we have the aws CLI
-  curl -sO 'https://s3.amazonaws.com/aws-xray-assets.us-east-1/xray-daemon/aws-xray-daemon-1.x.deb'
-  sudo dpkg -i aws-xray-daemon-1.x.deb
 
   jsaws-build-block "aws-tools" "done"
 fi
@@ -135,15 +147,20 @@ fi
 if jsaws-build-block "nodejs" "Installing node.js"; then
   if ! which node > /dev/null; then
 
-    ## Node dependencies -
-    #sudo apt-get update
-    #sudo apt-get install -y curl ntp build-essential autoconf libc6-dev automake libtool bison
+    # Node dependencies -
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl ntp build-essential autoconf libc6-dev automake libtool bison
+
+    if [[ $(lsb_release -c) =~ xenial ]]; then
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y python python-dev python-software-properties
+    fi
 
     # Node.js
     curl -s https://deb.nodesource.com/gpgkey/nodesource.gpg.key | sudo apt-key add -
 
     echo "deb https://deb.nodesource.com/node_6.x ${osversion} main" | sudo tee /etc/apt/sources.list.d/nodesource.list
-    sudo apt-get update && sudo apt-get install -y nodejs
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
 
     # Update so that "npm install -g" does not require sudo -- see https://docs.npmjs.com/getting-started/fixing-npm-permissions
     export NPM_CONFIG_PREFIX=/home/${username}/.npm-global
@@ -161,13 +178,14 @@ if jsaws-build-block "nodejs" "Installing node.js"; then
     # Put yarn bin at ~/local/bin
     npm install -g yarn
     yarn config set prefix $HOME/local
-
   fi
+
+  echo $PATH
 
   jsaws-build-block "nodejs" "done"
 
-  # Reboot?
-  check_reboot "installing Node.js deps"
+  # Force a reboot
+  reboot "installing Node.js deps"
 fi
 
 # ---------- Node-based utils -----------
@@ -186,8 +204,8 @@ fi
 if jsaws-build-block "first-big-apt-get" "Big first apt-get"; then
 
   # Install big, basic stuff
-  sudo apt-get update
-  sudo apt-get install -y \
+  sudo DEBIAN_FRONTEND=noninteractive apt-get update
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
       apt-transport-https curl tree ntp htop jq \
       libreadline6 git-core build-essential openssl nmap mercurial socat gawk libcurl4-openssl-dev ncurses-dev libncurses5-dev \
       libgdbm-dev libyaml-dev libffi-dev libreadline6-dev zlib1g zlib1g-dev libssl-dev autoconf libc6-dev automake libtool \
@@ -200,80 +218,131 @@ if jsaws-build-block "first-big-apt-get" "Big first apt-get"; then
   check_reboot "big initial install"
 fi
 
+# ---------- dotfiles ----------
+if [[ $service != base ]]; then
+  if jsaws-build-block "dotfiles" "Installing dotfiles"; then
+    if ! [[ -d $HOME/dotfiles ]]; then
+
+      cd
+      git clone git@github.com:briancsparks/dotfiles.git
+      cd dotfiles
+
+      ./setup
+      ./setupbash
+
+      cd
+
+      # Install ack and the silver searcher
+      curl -s -L 'http://beyondgrep.com/ack-2.10-single-file' > /tmp/ack && sudo cp /tmp/ack /usr/local/bin/ack && sudo chmod 0755 /usr/local/bin/ack
+
+      if [[ $(lsb_release -c) == precise ]]; then
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y automake pkg-config libpcre3-dev zlib1g-dev liblzma-dev
+        mkdir -p ~/zz_packages && cd $_
+        git clone https://github.com/ggreer/the_silver_searcher
+        cd the_silver_searcher
+        ./build.sh && make && sudo make install
+      else
+        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y silversearcher-ag
+      fi
+
+      # Install <hr> for bash
+      curl -sL https://raw.githubusercontent.com/LuRsT/hr/master/hr | sudo tee /usr/local/bin/hr > /dev/null
+      sudo chmod +x /usr/local/bin/hr
+
+    fi
+    jsaws-build-block "dotfiles" "done"
+  fi
+fi
+
+# ---------- Ansible ----------
+if env | egrep -i '_service=admin'; then
+  if jsaws-build-block "ansible" "Installing ansible"; then
+    if ! which ansible > /dev/null; then
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install software-properties-common
+      sudo DEBIAN_FRONTEND=noninteractive apt-add-repository ppa:ansible/ansible
+      sudo DEBIAN_FRONTEND=noninteractive apt-get update
+      sudo DEBIAN_FRONTEND=noninteractive apt-get update -y
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ansible
+    fi
+  fi
+  jsaws-build-block "ansible" "done"
+fi
+
 # ---------- nginx ----------
 if jsaws-build-block "build-nginx" "NGINX"; then
 
-  if ! which nginx > /dev/null; then
-    mkdir -p ~/zz_packages && cd $_
-    #aws s3 cp "s3://${bucket}/buildout/packages/nginx-1.9.15.tar.gz" ./
-    #aws s3 cp "s3://${bucket}/buildout/packages/openssl-1.0.1u.tar.gz" ./
-    #aws s3 cp "s3://${bucket}/buildout/packages/pcre-8.38.tar.gz" ./
-    #aws s3 cp "s3://${bucket}/buildout/packages/zlib-1.2.8.tar.gz" ./
+  if [[ -n $install_nginx ]]; then
 
-    curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/zlib-1.2.8.tar.gz"
-    curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/pcre-8.38.tar.gz"
-    curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/openssl-1.0.1u.tar.gz"
-    curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/nginx-1.9.15.tar.gz"
+    if ! which nginx > /dev/null; then
+      mkdir -p ~/zz_packages && cd $_
+      #aws s3 cp "s3://${bucket}/buildout/packages/nginx-1.9.15.tar.gz" ./
+      #aws s3 cp "s3://${bucket}/buildout/packages/openssl-1.0.1u.tar.gz" ./
+      #aws s3 cp "s3://${bucket}/buildout/packages/pcre-8.38.tar.gz" ./
+      #aws s3 cp "s3://${bucket}/buildout/packages/zlib-1.2.8.tar.gz" ./
 
-    tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'openssl.*\.tar\.gz$')"
-    tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'pcre.*\.tar\.gz$')"
-    tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'zlib.*\.tar\.gz$')"
-    tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'nginx.*\.tar\.gz$')"
+      curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/zlib-1.2.8.tar.gz"
+      curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/pcre-8.38.tar.gz"
+      curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/openssl-1.0.1u.tar.gz"
+      curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/nginx-1.9.15.tar.gz"
 
-    ln -fs "$(find ./ -maxdepth 1 -type d | egrep 'nginx')" nginx
+      tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'openssl.*\.tar\.gz$')"
+      tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'pcre.*\.tar\.gz$')"
+      tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'zlib.*\.tar\.gz$')"
+      tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'nginx.*\.tar\.gz$')"
 
-    # This name clashes with the NGINX tarball
-#    curl -s -O "https://s3.amazonaws.com/${http_bucket}/buildout/packages/nginx_eval_module-1.0.1.tar.gz"
-#    tar xzf "$(find ./ -maxdepth 1 -type f | egrep 'nginx_eval.*\.tar\.gz$')"
-    git clone git@github.com:vkholodkov/nginx-eval-module.git
+      ln -fs "$(find ./ -maxdepth 1 -type d | egrep 'nginx')" nginx
 
-    cd nginx
-    ./configure \
-      --prefix=/usr/local/nginx \
-      --conf-path=/etc/nginx/nginx.conf \
-      --http-log-path=/var/log/nginx/access.log \
-      --error-log-path=/var/log/nginx/error.log \
-      --pid-path=/var/run/nginx.pid \
-      --lock-path=/var/lock/nginx.lock \
-      --http-client-body-temp-path=/var/tmp/nginx/client \
-      --http-proxy-temp-path=/var/tmp/nginx/proxy \
-      --user=www-data \
-      --group=www-data \
-      --add-module=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep nginx.eval) \
-      --with-http_realip_module \
-      --with-openssl=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep openssl) \
-      --with-pcre \
-      --with-pcre=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep pcre) \
-      --with-zlib=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep zlib) \
-      --with-http_ssl_module \
-      --with-http_perl_module \
-      --with-http_stub_status_module
+      # This name clashes with the NGINX tarball
+      git clone git@github.com:vkholodkov/nginx-eval-module.git
 
-    # Make it!
-    make
+      cd nginx
+      ./configure \
+        --prefix=/usr/local/nginx \
+        --conf-path=/etc/nginx/nginx.conf \
+        --http-log-path=/var/log/nginx/access.log \
+        --error-log-path=/var/log/nginx/error.log \
+        --pid-path=/var/run/nginx.pid \
+        --lock-path=/var/lock/nginx.lock \
+        --http-client-body-temp-path=/var/tmp/nginx/client \
+        --http-proxy-temp-path=/var/tmp/nginx/proxy \
+        --user=www-data \
+        --group=www-data \
+        --add-module=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep nginx.eval) \
+        --with-http_realip_module \
+        --with-openssl=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep openssl) \
+        --with-pcre \
+        --with-pcre=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep pcre) \
+        --with-zlib=${HOME}/zz_packages/nginx/$(find ../ -maxdepth 1 -type d | egrep zlib) \
+        --with-http_ssl_module \
+        --with-http_perl_module \
+        --with-http_stub_status_module
 
-    # DO NOT use -j on these makes
-    sudo make install
+      # Make it!
+      make
 
-    # Make a link to the nginx binary from sbin
-    test -f /usr/local/nginx/sbin/nginx && sudo ln -fs /usr/local/nginx/sbin/nginx /usr/sbin/nginx
+      # DO NOT use -j on these makes
+      sudo make install
 
-    # Give ownership of logs dirs
-    sudo mkdir -p /var/log/nginx
-    sudo touch /var/log/nginx/access.log
-    sudo touch /var/log/nginx/error.log
-    sudo chown -R www-data:www-data /var/log/nginx
+      # Make a link to the nginx binary from sbin
+      test -f /usr/local/nginx/sbin/nginx && sudo ln -fs /usr/local/nginx/sbin/nginx /usr/sbin/nginx
 
-    cd
+      # Give ownership of logs dirs
+      sudo mkdir -p /var/log/nginx
+      sudo touch /var/log/nginx/access.log
+      sudo touch /var/log/nginx/error.log
+      sudo chown -R www-data:www-data /var/log/nginx
 
-    # Make dirs
-    sudo mkdir -p /var/tmp/nginx && sudo chown -R www-data:www-data $_
-    sudo mkdir -p /etc/nginx/sites-available
-    sudo mkdir -p /etc/nginx/sites-enabled
+      cd
 
-    mkdir -p ~/www
+      # Make dirs
+      sudo mkdir -p /var/tmp/nginx && sudo chown -R www-data:www-data $_
+      sudo mkdir -p /etc/nginx/sites-available
+      sudo mkdir -p /etc/nginx/sites-enabled
 
-    cd
+      mkdir -p ~/www
+
+      cd
+    fi
   fi
 
   jsaws-build-block "build-nginx" "done"
