@@ -50,13 +50,26 @@ if [[ -n $step1 ]]; then
   params="--color=green --image-id=xenial --bucket-namespace=mobilewebprint --classb=${cluster_classb} --namespace=${namespace}"
   params="${params} --stack=cluster --db=10.${prod_classb}.21.220 --util=10.${prod_classb}.21.4 "
 
-  (./boot-instance --key=HQ        --ip=10.13.0.251 --ruby    --instance-type=c4.xlarge --service=admin   --skip-ami ${params})
+  echo "---------------------- Starting admin ------------------------------------------------------------------"
+  (./boot-instance --key=HQ        --ip=10.13.0.251 --ruby    --instance-type=c4.xlarge --service=admin   --skip-ami ${params}) &
+  echo "---------------------- Starting bastione ---------------------------------------------------------------"
+  (./boot-instance --key=mario_demo --ip=10.13.1.3  --no-ruby --instance-type=t2.micro --service=bastione --skip-ami ${params}) &
+
+  jobs
+  wait
 
   # This version is good
-  (./boot-instance --key=mario_demo --ip=10.13.1.3  --no-ruby --instance-type=t2.micro --service=bastione --skip-ami ${params})
-#  (./boot-instance --key=mario_demo --ip=10.13.9.3  --no-ruby --instance-type=t2.micro --service=bastionb --skip-ami ${params})
-#  (./boot-instance --key=mario_demo --ip=10.13.5.3  --no-ruby --instance-type=t2.micro --service=bastiond --skip-ami ${params})
-#  (./boot-instance --key=mario_demo --ip=10.13.13.3 --no-ruby --instance-type=t2.micro --service=bastiona --skip-ami ${params})
+  echo "---------------------- Starting bastionb ---------------------------------------------------------------"
+  (./boot-instance --key=mario_demo --ip=10.13.9.3  --no-ruby --instance-type=t2.micro --service=bastionb --skip-ami ${params}) &
+  sleep 15
+  echo "---------------------- Starting bastiond ---------------------------------------------------------------"
+  (./boot-instance --key=mario_demo --ip=10.13.5.3  --no-ruby --instance-type=t2.micro --service=bastiond --skip-ami ${params}) &
+  sleep 15
+  echo "---------------------- Starting bastiona ---------------------------------------------------------------"
+  (./boot-instance --key=mario_demo --ip=10.13.13.3 --no-ruby --instance-type=t2.micro --service=bastiona --skip-ami ${params}) &
+
+  jobs
+  wait
 
   echo ""
   echo "The 'cluster' admin and bastion servers are up. Log into the admin and run step2"
