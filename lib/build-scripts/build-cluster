@@ -34,18 +34,18 @@ if [[ -n $step1 ]]; then
   [[ -z $cluster_classb ]]  && die "Must provide --cluster-classb="
   [[ -z $prod_classb ]]     && die "Must provide --prod-classb="
 
-#  # Build the cluster stack -- 4 azs, all public
-#  create_stack --stack-name=${namespace}-cluster --namespace=${namespace} \
-#    --cidr=10.${cluster_classb}.0.0/16 \
-#    --domain-name=${domain_name} \
-#    --hosted-zone=${dev_hosted_zone} \
-#    --num-azs=4 \
-#    --num-subnets=3 \
-#    --cluster \
-#    --wait | tee /tmp/${namespace}-cluster.json | underscore print --color
-#
-#  # Peer ourselves and the newly created cluster VPC
-#  peer_vpcs --from=${my_classb} --to=${cluster_classb} --wait | tee /tmp/peering-${my_classb}-to-${cluster_classb}.json | underscore print --color
+  # Build the cluster stack -- 4 azs, all public
+  create_stack --stack-name=${namespace}-cluster --namespace=${namespace} \
+    --cidr=10.${cluster_classb}.0.0/16 \
+    --domain-name=${domain_name} \
+    --hosted-zone=${dev_hosted_zone} \
+    --num-azs=4 \
+    --num-subnets=3 \
+    --cluster \
+    --wait | tee /tmp/${namespace}-cluster.json | underscore print --color
+
+  # Peer ourselves and the newly created cluster VPC
+  peer_vpcs --from=${my_classb} --to=${cluster_classb} --wait | tee /tmp/peering-${my_classb}-to-${cluster_classb}.json | underscore print --color
 
   params="--color=green --image-id=xenial --bucket-namespace=mobilewebprint --classb=${cluster_classb} --namespace=${namespace}"
   params="${params} --stack=cluster --db=10.${prod_classb}.21.220 --util=10.${prod_classb}.21.4 "
