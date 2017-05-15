@@ -16,17 +16,17 @@ if jsaws-build-block "jenkins" "Installing Jenkins"; then
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y graphviz openjdk-7-jdk
 
     wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -
-    echo 'deb https://pkg.jenkins.io/debian-stable binary/' | tee -a /etc/apt/sources.list
+    echo 'deb https://pkg.jenkins.io/debian-stable binary/' | sudo tee -a /etc/apt/sources.list
 
     sudo DEBIAN_FRONTEND=noninteractive apt-get update
     sudo DEBIAN_FRONTEND=noninteractive apt-get install -y jenkins
 
-    systemctl start jenkins
+    sudo systemctl start jenkins
 
     # TODO: test that jenkins is listening on 8080
 
     echo cat /var/lib/jenkins/secrets/initialAdminPassword
-    cat /var/lib/jenkins/secrets/initialAdminPassword
+    sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 
     # TODO: instructions for nginx-as-reverse-proxy-for-jenkins: https://wiki.jenkins-ci.org/display/JENKINS/Installing+Jenkins+on+Ubuntu
   fi

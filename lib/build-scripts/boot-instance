@@ -1,20 +1,30 @@
 #!/bin/bash -e
 
+[[ -n $NAMESPACE                    ]] && namespace="$NAMESPACE"
+[[ -n $SERVERASSIST_DB_IP           ]] && db="$SERVERASSIST_DB_IP"
+[[ -n $SERVERASSIST_DB_HOSTNAME     ]] && db="$SERVERASSIST_DB_HOSTNAME"
+[[ -n $SERVERASSIST_UTIL_IP         ]] && util="$SERVERASSIST_UTIL_IP"
+[[ -n $SERVERASSIST_UTIL_HOSTNAME   ]] && util="$SERVERASSIST_UTIL_HOSTNAME"
+
 eval "$(cli-shezargs $@)"
 
 die() {
-  echo "Usage: $0 IP dbIp utilIp namespace color key instance-type aws-image-id build-num service" 2>&1
+  echo "Usage: $0 options" 2>&1
   echo ""
-  echo "          --ip=10.11.23.91 --db=10.11.21.229 --util=10.11.21.4 --namespace=mario --color=teal --key=mario_demo --instance-type=c4.xlarge --image-id=xenial --what=admin --bucket-namespace=mobilewebprint" 2>&1
-  echo "          --ip=10.11.23.91 --db=10.11.21.229 --util=10.11.21.4 --namespace=mario --color=teal --key=mario_demo --instance-type=t2.large  --image-id=xenial --what=bastion --bucket-namespace=mobilewebprint" 2>&1
+  echo "          --service=app --ip=10.13.23.91 --color=teal --key=mario_demo --instance-type=c4.xlarge --bucket-namespace=mobilewebprint" 2>&1
+  echo "          --service=app --ip=10.13.23.91 --color=teal --key=mario_demo --instance-type=t2.large  --bucket-namespace=mobilewebprint" 2>&1
   echo ""
   echo "  Options:"
   echo ""
   echo "          --dry-run"
-  echo "          --no-ruby"
+  echo "          --ruby"
   echo "          --skip-ami"
   echo "          --no-terminate"
   echo "          --build-number=20"
+  echo "          --db=10.13.21.229"
+  echo "          --util=10.13.21.4"
+  echo "          --namespace="
+  echo "          --image-id="
   exit 1
 }
 
@@ -33,6 +43,7 @@ start_dir="$(dirname $0)"
 [[ -n $instance_type        ]] || die
 [[ -n $build_number         ]] || die
 [[ -n $bucket_namespace     ]] || die
+[[ -n $service              ]] || die
 
 run_instance_params="$run_instance_params --db=$db"
 run_instance_params="$run_instance_params --util=$util"

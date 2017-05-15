@@ -15,7 +15,18 @@ peer_vpcs() {
   ra invoke "$(fn "$HOME/dev/" 'lib/ec2/cf\.js$')" peerVpcs "$@"
 }
 
+boot_instance() {
+  service="$1"
+  echo "---------------------- Starting $service ------------------------------------------------------------------"
+  (./boot-instance --service=${service} "$@")
+}
+
 my_ip="$(curl -s http://169.254.169.254/latest/meta-data/local-ipv4)"
+aws_region="$(curl -s http://169.254.169.254/latest/dynamic/instance-identity/document | underscore select '.region' --outfmt text)"
+my_keyname="$(curl -s http://169.254.169.254/latest/meta-data/public-keys/ | cut -d= -f2)"
+my_mac="$(curl -s http://169.254.169.254/latest/meta-data/mac)"
+my_vpc_id="$(curl -s http://169.254.169.254/latest/meta-data/network/interfaces/macs/${my_mac}/vpc-id)"
+
 
 # Defaults
 my_classb="$(echo $my_ip | cut -d'.' -f2)"
@@ -35,6 +46,7 @@ if [[ -n $step1 ]]; then
   [[ -z $prod_classb ]]     && die "Must provide --prod-classb="
 
   # Build the cluster stack -- 4 azs, all public
+  echo "Creating ${namespace}-cluster stack -- takes about 10 minutes to create about 100 items"
   create_stack --stack-name=${namespace}-cluster --namespace=${namespace} \
     --cidr=10.${cluster_classb}.0.0/16 \
     --domain-name=${domain_name} \
@@ -89,12 +101,29 @@ fi
 
   [[ -z $cluster_classb ]]  && die "Must provide --cluster-classb="
   [[ -z $prod_classb ]]     && die "Must provide --prod-classb="
-  [[ -z $our_vpc ]]         && die "Must provide --our-vpc="
+  [[ -z $test_classb ]]     && die "Must provide --test-classb="
+
+  # Get temp creds
+  aws_role_session="${USER}-build-cluster"
+
+  orig_aws_access_key_id=$AWS_ACCESS_KEY_ID
+  orig_aws_secret_access_key=$AWS_SECRET_ACCESS_KEY
+  orig_aws_session_token=$AWS_SESSION_TOKEN
+
+  assumed_acct="$(echo $JSAWS_AWS_ACCT_EXTRA_CREDS | egrep -o 'pub:[^,]+' | cut -d':' -f2 | cut -d'/' -f1)"
+  assumed_role="$(echo $JSAWS_AWS_ACCT_EXTRA_CREDS | egrep -o 'pub:[^,]+' | cut -d'/' -f2)"
+  pub_sts=( $(aws sts assume-role --role-arn arn:aws:iam::${assumed_acct}:role/${assumed_role} --role-session-name ${aws_role_session} --query 'Credentials.[AccessKeyId,SecretAccessKey,SessionToken]' --output text) )
+
+  # ---------------------- Create pub stack -------------------------------------------------------
+  export AWS_ACCESS_KEY_ID="${pub_sts[0]}"
+  export AWS_SECRET_ACCESS_KEY="${pub_sts[1]}"
+  export AWS_SESSION_TOKEN="${pub_sts[2]}"
 
   # Remember all the VPCs now, so we know which one is new
-  aws ec2 describe-vpcs | underscore 'select' .VpcId | tr -d ' ",[]' | egrep -v '^$' | sort > /tmp/vpcs.txt
+  aws ec2 describe-vpcs | underscore 'select' .VpcId --outfmt=text | egrep -v '^$' | sort > /tmp/vpcs.txt
 
   # Build prod stack and wait
+  echo "Creating ${namespace}-pub stack -- takes about 10 minutes to create about 100 items"
   create_stack --stack-name=${namespace}-pub --namespace=${namespace} \
     --cidr=10.${prod_classb}.0.0/16 \
     --domain-name=${domain_name} \
@@ -102,70 +131,65 @@ fi
     --num-azs=4 \
     --num-subnets=3 \
     --cluster \
-    --session=$(echo $JSAWS_AWS_ACCT_EXTRA_CREDS | egrep -o 'pub:[^,]+' | cut -d':' -f1) \
+    --session=$aws_role_session \
     --account=$(echo $JSAWS_AWS_ACCT_EXTRA_CREDS | egrep -o 'pub:[^,]+' | cut -d':' -f2 | cut -d'/' -f1) \
     --role=$(echo $JSAWS_AWS_ACCT_EXTRA_CREDS | egrep -o 'pub:[^,]+' | cut -d'/' -f2) \
     --wait | tee /tmp/${namespace}-pub.json | underscore print --color
 
   # Get the list of VPCs, so we can figure out which one is new
-  aws ec2 describe-vpcs | underscore 'select' .VpcId | tr -d ' ",[]' | egrep -v '^$' | sort > /tmp/vpcs2.txt
+  aws ec2 describe-vpcs | underscore 'select' .VpcId --outfmt=text | egrep -v '^$' | sort > /tmp/vpcs2.txt
 
-  printf "\n\nThe pub stack has just been created. Enter its VpcId\n"
-  prod_vpc="$(diff /tmp/vpcs.txt /tmp/vpcs2.txt  | tr -d '< "' | egrep '^vpc' | head -1)"
+  # Determine the new VPC's ID
+  prod_vpc="$(diff /tmp/vpcs.txt /tmp/vpcs2.txt  | tr -d '<> "' | egrep '^vpc' | head -1)"
 
-#  read prod_vpc
+  echo "Determined prod VPC to be: $prod_vpc"
+
+  unset AWS_ACCESS_KEY_ID
+  unset AWS_SECRET_ACCESS_KEY
+  unset AWS_SESSION_TOKEN
+
+  # ---------------------- Peer cluster and pub stacks --------------------------------------------
 
   # Remember the peering info, so we can determine which is new later
-  aws ec2 describe-vpc-peering-connections | underscore 'select' '.VpcPeeringConnectionId' | tr -d ' ",[]' | egrep -v '^$' | sort > /tmp/scratch-file.txt
+  aws ec2 describe-vpc-peering-connections | underscore 'select' '.VpcPeeringConnectionId' --outfmt=text | egrep -v '^$' | sort > /tmp/peering-connections.txt
 
-  aws ec2 --region us-east-1 create-vpc-peering-connection --vpc-id $our_vpc --peer-vpc-id $prod_vpc --peer-owner-id 244406501905
+  aws ec2 --region us-east-1 create-vpc-peering-connection --vpc-id $my_vpc_id --peer-vpc-id $prod_vpc --peer-owner-id 244406501905
 
   # Get the list of peering info, so we can see which one is new
-  aws ec2 describe-vpc-peering-connections | underscore 'select' '.VpcPeeringConnectionId' | tr -d ' ",[]' | egrep -v '^$' | sort > /tmp/scratch-file2.txt
+  aws ec2 describe-vpc-peering-connections | underscore 'select' '.VpcPeeringConnectionId' --outfmt=text | egrep -v '^$' | sort > /tmp/peering-connections2.txt
 
-  printf "A PCX was just created. Accept it in the prod acct, and enter it here.\n"
-  to_pcx="$(diff /tmp/scratch-file.txt /tmp/scratch-file2.txt  | tr -d '< "' | egrep '^vpc' | head -1)"
-#  read to_pcx
+  to_pcx="$(diff /tmp/peering-connections.txt /tmp/peering-connections2.txt  | tr -d '<> "' | egrep '^pcx' | head -1)"
 
-echo $prod_vpc $to_pcx
-exit
-
-  peer_vpcs --to-pcx=${to_pcx} --from=${cluster_classb} --to-cidr=10.${prod_classb}.0.0/16 --wait
-  peer_vpcs --to-pcx=${to_pcx} --from=${prod_classb} --to-cidr=10.${cluster_classb}.0.0/16 --wait --session=prod --acct=244406501905 --role=mario-mobilewebprint
+  echo "Peering ${cluster_classb} and ${prod_classb} using ${to_pcx} -- takes about 3 minutes to create about 20 items in 2 passes"
+  peer_vpcs --to-pcx=${to_pcx} --from=${cluster_classb} --to-cidr=10.${prod_classb}.0.0/16 --wait | tee /tmp/peering-cluster-to-pub.json | underscore print --color
+  peer_vpcs --to-pcx=${to_pcx} --from=${prod_classb} --to-cidr=10.${cluster_classb}.0.0/16 --wait --session=prod --acct=244406501905 --role=mario-mobilewebprint | tee /tmp/peering-pub-to-cluster.json | underscore print --color
 
 #fi
 
 #if [[ -n $step3 ]]; then
 
-  [[ -z $test_classb ]]     && die "Must provide --test-classb="
+  # ---------------------- Create test stack -------------------------------------------------------
 
   # Remember all the VPCs now, so we know which one is new
-  aws ec2 describe-vpcs | underscore 'select' .VpcId | tr -d ' ",[]' | egrep -v '^$' | sort > /tmp/vpcs.txt
+  aws ec2 describe-vpcs | underscore 'select' .VpcId --outfmt=text | egrep -v '^$' | sort > /tmp/vpcs.txt
 
   # Build Test stack
-  create_stack --stack-name=${namespace}-test${sub_name} --namespace=${namespace} \
+  echo "Creating ${namespace}-test stack -- takes about 10 minutes to create about 100 items"
+  create_stack --stack-name=${namespace}-test --namespace=${namespace} \
     --cidr=10.${test_classb}.0.0/16 \
     --domain-name=${domain_name} \
-    ${hosted_zone} \
+    --hosted-zone=${dev_hosted_zone} \
     --num-azs=4 \
     --num-subnets=3 \
     --test \
     --wait | tee /tmp/${namespace}-test.json | underscore print --color
 
   # Get the list of VPCs, so we can figure out which one is new
-  aws ec2 describe-vpcs | underscore 'select' .VpcId | tr -d ' ",[]' | egrep -v '^$' | sort > /tmp/vpcs2.txt
+  aws ec2 describe-vpcs | underscore 'select' .VpcId --outfmt=text | egrep -v '^$' | sort > /tmp/vpcs2.txt
 
-  test_vpc="$(diff /tmp/vpcs.txt /tmp/vpcs2.txt  | tr -d '< "' | egrep '^vpc' | head -1)"
+  test_vpc="$(diff /tmp/vpcs.txt /tmp/vpcs2.txt  | tr -d '<> "' | egrep '^vpc' | head -1)"
 
-  printf "\n\nThe test stack has just been created.  Press [ENTER] to continue...\n\n"
-  read
-
-  echo ""
-  echo "The networking part of the non-prod infrastructure is up."
-  echo "   Run step4 to peer test, prod."
-  echo "   Run step5 to start needed cluster instances"
-  echo "   Run step6 to start test instances"
-  echo ""
+  echo "Determined test VPC to be: $test_vpc"
 
 #fi
 
@@ -177,23 +201,38 @@ exit
 
 #if [[ -n $step4 ]]; then
 
-  printf "Enter the test stack VpcId: "
-#  read test_vpc
+  # ---------------------- Peer test and pub stacks --------------------------------------------
 
-  printf "Enter the prod stack VpcId: "
-#  read prod_vpc
+  # Remember the peering info, so we can determine which is new later
+  aws ec2 describe-vpc-peering-connections | underscore 'select' '.VpcPeeringConnectionId' --outfmt=text | egrep -v '^$' | sort > /tmp/peering-connections.txt
 
-  # -------- test <-> prod
   aws ec2 --region us-east-1 create-vpc-peering-connection --vpc-id $test_vpc --peer-vpc-id $prod_vpc --peer-owner-id 244406501905
-  printf "A PCX was just created. Accept it in the prod account, and enter it here: "
-  read test_and_prod_pcx
 
-  peer_vpcs --to-pcx=${test_and_prod_pcx} --from=${test_classb} --to-cidr=10.${prod_classb}.0.0/16 --wait
-  peer_vpcs --to-pcx=${test_and_prod_pcx} --from=${prod_classb} --to-cidr=10.${test_classb}.0.0/16 --wait --session=prod --acct=244406501905 --role=mario-mobilewebprint
+  # Get the list of peering info, so we can see which one is new
+  aws ec2 describe-vpc-peering-connections | underscore 'select' '.VpcPeeringConnectionId' --outfmt=text | egrep -v '^$' | sort > /tmp/peering-connections2.txt
+
+  test_and_prod_pcx="$(diff /tmp/peering-connections.txt /tmp/peering-connections2.txt  | tr -d '<> "' | egrep '^pcx' | head -1)"
+
+  echo "Peering ${cluster_classb} and ${prod_classb} using ${test_and_prod_pcx} -- takes about 3 minutes to create about 20 items in 2 passes"
+  peer_vpcs --to-pcx=${test_and_prod_pcx} --from=${test_classb} --to-cidr=10.${prod_classb}.0.0/16 --wait | tee /tmp/peering-test-to-pub.json | underscore print --color
+  peer_vpcs --to-pcx=${test_and_prod_pcx} --from=${prod_classb} --to-cidr=10.${test_classb}.0.0/16 --wait --session=prod --acct=244406501905 --role=mario-mobilewebprint | tee /tmp/peering-pub-to-test.json | underscore print --color
+
+  echo "Done."
+  echo ''
+  echo "    Do not forget to accept the new peering connection requests in the pub account."
 
 #fi
 
-exit 0
+if [[ -n $step4 ]]; then
+
+  [[ -z $prod_classb ]]     && die "Must provide --prod-classb="
+
+  params="--color=green --image-id=xenial --bucket-namespace=mobilewebprint --namespace=${namespace}"
+  params="${params} --stack=cluster --db=10.${prod_classb}.21.220 --util=10.${prod_classb}.21.4 "
+
+  echo "---------------------- Starting admin ------------------------------------------------------------------"
+  (./boot-instance --key=HQ        --ip=10.13.0.251 --ruby    --instance-type=c4.xlarge --service=admin   --skip-ami ${params}) &
+fi
 
 if [[ -n $step5 ]]; then
 
