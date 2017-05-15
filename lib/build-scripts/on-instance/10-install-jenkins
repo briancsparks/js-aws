@@ -12,14 +12,14 @@ if jsaws-build-block "jenkins" "Installing Jenkins"; then
 
     sudo DEBIAN_FRONTEND=noninteractive add-apt-repository ppa:openjdk-r/ppa
     sudo DEBIAN_FRONTEND=noninteractive apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get update
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y graphviz openjdk-7-jdk | tee -a ~/tmp/buildout/log/apt-get.log | yoshi-tap-apt-get | tap-difflet
+    sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y graphviz openjdk-7-jdk
 
     wget -q -O - https://pkg.jenkins.io/debian-stable/jenkins.io.key | sudo apt-key add -
     echo 'deb https://pkg.jenkins.io/debian-stable binary/' | tee -a /etc/apt/sources.list
 
-    sudo apt-get update
-    sudo apt-get install -y jenkins
+    sudo DEBIAN_FRONTEND=noninteractive apt-get update
+    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y jenkins
 
     systemctl start jenkins
 
