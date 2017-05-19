@@ -1,7 +1,7 @@
 #!/bin/bash -e
 
 
-sudo DEBIAN_FRONTEND=noninteractive add-apt-repository ppa:openjdk-r/ppa
+sudo DEBIAN_FRONTEND=noninteractive add-apt-repository -y ppa:openjdk-r/ppa
 sudo DEBIAN_FRONTEND=noninteractive apt-get update
 sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
 sudo DEBIAN_FRONTEND=noninteractive apt-get install -y graphviz openjdk-7-jdk
@@ -14,6 +14,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y jenkins
 
 sudo systemctl start jenkins
 
+sleep 2
 echo cat /var/lib/jenkins/secrets/initialAdminPassword
 sudo cat /var/lib/jenkins/secrets/initialAdminPassword
 

@@ -1,0 +1,50 @@
+#!/bin/bash -e
+
+eval "$(cli-shezargs $@)"
+
+
+sudo DEBIAN_FRONTEND=noninteractive add-apt-repository -y ppa:openjdk-r/ppa
+sudo DEBIAN_FRONTEND=noninteractive apt-get update
+sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y openjdk-7-jdk realpath zip unzip ant gradle lib32stdc++6 lib32z1
+
+# TODO: someone on the Interwebs said to install libgl1-mesa-dev
+
+mkdir -p ~/zz_packages && cd $_
+aws s3 cp "s3://${http_bucket}/buildout/packages/android-sdk_r24.4.1-linux.tgz" ./
+aws s3 cp "s3://${http_bucket}/buildout/packages/android-ndk-r11c-linux-x86_64.zip" ./
+aws s3 cp "s3://${http_bucket}/buildout/packages/cmake-3.8.1-Linux-x86_64.tar.gz" ./
+
+# TODO: only download what is needed
+tar -xf android-sdk_r24.4.1-linux.tgz
+cd android-sdk-linux/tools
+./android list sdk
+./android list sdk --all --extended
+
+#( sleep 5 && while [ 1 ]; do sleep 1; echo y; done ) | ./android update sdk --no-ui --filter tools,platform-tool,android-23,43,37,6
+( sleep 5 && while [ 1 ]; do sleep 1; echo y; done ) | \
+    ./android update sdk --no-ui --all --filter \
+    tools,platform-tool,android-23,android-10,android-16,android-20,android-21,build-tools-19.0.1,build-tools-23.0.3,extra-android-m2repository,extra-google-m2repository,extra-google-google_play
+
+# Others for SCC
+( sleep 5 && while [ 1 ]; do sleep 1; echo y; done ) | \
+    ./android update sdk --no-ui --all --filter \
+    android-21,build-tools-21.1.2
+
+cd ..
+
+echo "PATH=\$PATH:$(realpath platform-tools):$(realpath tools):$(realpath build-tools/23.0.3)" | sudo tee -a /etc/environment
+
+cd ..
+unzip android-ndk-r11c-linux-x86_64.zip
+
+# Env vars
+echo "ANDROID_HOME=$(pwd)/android-sdk-linux" | sudo tee -a /etc/environment
+echo "ANDROID_NDK=$(pwd)/android-ndk-r11c"   | sudo tee -a /etc/environment
+
+# Other
+tar xf cmake-3.8.1-Linux-x86_64.tar.gz
+echo "PATH=\$PATH:$(pwd)/cmake-3.8.1-Linux-x86_64/bin" | sudo tee -a /etc/environment
+
+
+

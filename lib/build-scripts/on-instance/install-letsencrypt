@@ -1,0 +1,24 @@
+#!/bin/bash -e
+
+eval "$(cli-shezargs $@)"
+
+[[ -n $sub_domain ]] || die "Must have --sub-domain="
+[[ -n $domain     ]] || die "Must have --domain="
+
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y software-properties-common
+sudo DEBIAN_FRONTEND=noninteractive add-apt-repository -y ppa:certbot/certbot
+sudo DEBIAN_FRONTEND=noninteractive apt-get update
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y certbot
+
+sudo mkdir -p /etc/letsencrypt/
+
+sudo mkdir -p /etc/nginx/certs
+sudo aws s3 cp s3://mobilewebprint-deploy/buildout/config/certs/mario_client_ca.crt /etc/nginx/certs/
+
+mkdir -p ~/www/${sub_domain}
+#sudo certbot certonly --register-unsafely-without-email --webroot -w www/${sub_domain}/ -d ${sub_domain}.${domain}
+sudo certbot --test-cert certonly --register-unsafely-without-email --webroot -w www/${sub_domain}/ -d ${sub_domain}.${domain}
+
+# ssl_certificate /etc/letsencrypt/live/${sub_domain}.mobilewebassist.net/fullchain.pem;
+# ssl_certificate_key /etc/letsencrypt/live/${sub_domain}.mobilewebassist.net/privkey.pem;
+
