@@ -6,10 +6,19 @@ var sg              = require('sgsg');
 var _               = sg._;
 var ARGV            = sg.ARGV();
 var fs              = require('fs');
-var jsawsEc2        = require('../lib/ec2/ec2.js');
+var jsawsEc2        = require('../lib2/ec2/ec2.js');
 
 var main = function() {
   if (ARGV.setup) { return lib.setup({}, {}, function(){}); }
+
+  // Ansible will call with --list or --host
+  if (ARGV.host)  { process.stdout.write('{}\n'); }
+
+  if (ARGV.list)  {
+    lib.inventory({}, {}, function(err, list) {
+      process.stdout.write(JSON.stringify(list)+"\n");
+    });
+  }
 };
 
 var lib = {};
@@ -42,6 +51,47 @@ lib.setup = function(argv, context, callback) {
  *
  */
 lib.inventory = function(argv, context, callback) {
+  return jsawsEc2.getInstances({}, context, function(err, instances_) {
+    var result = sg.reduce(instances_, {}, function(m_, instance, instanceId) {
+      var m = m_;
+      //var instData = _.pick(instance, 'PrivateIpAddress', 'Tags');
+      var instData = instance.PrivateIpAddress;
+      var b        = instance.PrivateIpAddress.split('.')[1];
+
+      if (!instance.Tags)     { return m; }
+
+      // This server belongs to all the groups for which it has tags
+      _.each(instance.Tags, function(value, tag) {
+        if (tag.startsWith('aws'))          { return; }
+        if (tag.toLowerCase() === 'name')   { return; }
+        if (!_.isString(value))             { return; }
+        if (value.match(/^[0-9]+$/))        { return; }
+
+        var v = value.replace(/[^a-zA-Z0-9]/g, '_');
+        if (!m[v] || (_.isString(instData) && m[v] && (m[v].hosts.indexOf(instData) === -1))) {
+          sg.setOnna(m, [v, 'hosts'], instData);
+        }
+      });
+
+      // Then, add bXX
+      sg.setOnna(m, ['b'+b, 'hosts'], instData);
+
+      return m;
+    });
+
+    result._meta = { hostvars: {}};
+    return callback(null, result);
+  });
+};
+
+/**
+ *  Return a JSON object in the Ansible format for our current
+ *  server inventory, and vars. As documented here:
+ *
+ *          http://docs.ansible.com/ansible/dev_guide/developing_inventory.html
+ *
+ */
+lib.inventoryX = function(argv, context, callback) {
   var result = {};
 
   var parts;
@@ -61,7 +111,7 @@ lib.inventory = function(argv, context, callback) {
       var name  = parts[0];
       var iam   = parts[1];
 
-      return jsawsEc2.getInstances(sg.kv('iam', iam), context, function(err, instances_) {
+      return jsawsEc2.getInstances({}, context, function(err, instances_) {
         d.instances[name] = instances_;
         return nextAcct();
       });
