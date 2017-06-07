@@ -106,6 +106,25 @@ ec2.getInstances = function(argv, context, callback) {
   });
 };
 
+ec2.getVpcPeeringConnections = function(argv, context, callback) {
+  return describe(argv, context, 'VpcPeeringConnections', function(err, peeringGroup) {
+    if (err) { return die(err, callback, 'lib2ec2.getInstances.describe'); }
+
+    var result = {};
+
+    _.each(peeringGroup, function(peerings) {
+      var acctName = peerings.accountName;
+      delete peerings.accountName;
+
+      _.each(peerings, function(peering, id) {
+        result[peering.VpcPeeringConnectionId] = _.extend({accountName: acctName}, peering);
+      });
+    });
+
+    return callback(null, result);
+  });
+};
+
 
 raEc2 = ra.wrap(ec2);
 
