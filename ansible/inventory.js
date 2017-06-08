@@ -97,7 +97,7 @@ lib.inventory = function(argv, context, callback) {
 
   }, function(next) {
 
-    // Get instances
+    // Get the general environment
     return jsaws.envInfo({}, context, function(err, envInfo_) {
       if (err)  { return sg.die(err, callback, 'inventory.envInfo'); }
 
