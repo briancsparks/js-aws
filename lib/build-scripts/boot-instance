@@ -1,6 +1,0 @@
-#!/bin/bash -e
-
-# booting an instance is just build-instance without creating an ami
-script_dir="$(dirname $0)"
-$script_dir/build-instance --skip-ami "$@"
-
