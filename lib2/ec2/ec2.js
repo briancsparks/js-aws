@@ -6,14 +6,16 @@
  */
 var sg                  = require('sgsg');
 var _                   = sg._;
-var ra                  = require('run-anywhere');
-var awsJsonLib          = require('aws-json');
+var jsaws               = require('../../lib/jsaws');
+var ra                  = sg.include('run-anywhere')  || require('run-anywhere');
+var awsJsonLib          = sg.include('aws-json')      || require('aws-json');
 var awsServiceLib       = require('../../lib/service/service');
 
 var argvExtract         = sg.argvExtract;
 var die                 = sg.die;
 var awsService          = awsServiceLib.awsService;
 var extractServiceArgs  = awsServiceLib.extractServiceArgs;
+const accounts          = sg.parseOn2Chars(process.env.JSAWS_AWS_ACCTS, ',', ':');
 
 var flattenAndLabel;
 
@@ -21,7 +23,8 @@ var ec2     = {};
 var raEc2;                /* Gets built from the ec2 object at the end of this file */
 
 /**
- *  The common part of all of the ec2 describeXyz APIs.
+ *  The common part of all of the ec2 describeXyz-like APIs (also works for listXyz APIs, if
+ *  the caller passes awsFnName.)
  *
  *  This function will take care of all of the multi-account stuff, as well as the until() call
  *  for any of the describe functions.
@@ -117,6 +120,81 @@ ec2.getInstances = function(argv, context, callback) {
   });
 };
 
+/**
+ *  describeImages
+ */
+ec2.getImages = function(argv_, context, callback) {
+
+  var   argv            = sg.deepCopy(argv_);
+
+  var params = _.extend({
+    type    : 'Images',
+    fname   : 'describeImages',
+    service : 'EC2'
+  }, argv);
+
+  return jsaws.envInfo({}, context, function(err, envInfo) {
+    if (err)          { return sg.die(err, callback, 'getImages.envInfo'); }
+
+    params.Owners = [envInfo.accountId];
+    return awsServiceLib.describe(params, context, function(err, images) {
+      if (err)          { return sg.die(err, callback, 'getImages.describe'); }
+
+      return callback(null, images);
+    });
+  });
+};
+
+/**
+ *  describeSnapshots
+ */
+ec2.getSnapshots = function(argv_, context, callback) {
+
+  var   argv            = sg.deepCopy(argv_);
+  const onlyOneAcct     = argvExtract(argv, 'only-one-acct');
+
+  var params = _.extend({
+    type    : 'Snapshots',
+    fname   : 'describeSnapshots',
+    service : 'EC2'
+  }, argv);
+
+  if (onlyOneAcct && accounts[onlyOneAcct]) {
+    _.extend(params, {onlyOneAcct, OwnerIds:[accounts[onlyOneAcct]]});
+  } else {
+    _.extend(params, {OwnerIds:_.values(accounts)});
+  }
+console.error(params);
+  return awsServiceLib.describe(params, context, function(err, snapshots) {
+    if (err)          { return sg.die(err, callback, 'getSnapshots.describe'); }
+
+    return callback(null, snapshots);
+  });
+};
+
+/**
+ *  describeVolumes
+ */
+ec2.getVolumes = function(argv_, context, callback) {
+
+  var   argv            = sg.deepCopy(argv_);
+
+  var params = _.extend({
+    type    : 'Volumes',
+    fname   : 'describeVolumes',
+    service : 'EC2'
+  }, argv);
+
+  return awsServiceLib.describe(params, context, function(err, volumes) {
+    if (err)          { return sg.die(err, callback, 'getVolumes.describe'); }
+
+    return callback(null, volumes);
+  });
+};
+
+/**
+ *  The js-aws equivalent of ec2.descriveVpcPeeringConnections
+ */
 ec2.getVpcPeeringConnections = function(argv, context, callback) {
   return describe(argv, context, 'VpcPeeringConnections', function(err, peeringGroup) {
     if (err) { return die(err, callback, 'lib2ec2.getInstances.describe'); }
@@ -244,7 +322,11 @@ ec2.moveEipForFqdn = function(argv, context, callback) {
   });
 };
 
-
+/**
+ *  Takes the output of the describe() function, and flattens it (one level
+ *  with all the items from all the accts), with each item labeled with
+ *  `accountName`.
+ */
 flattenAndLabel = function(itemses) {
   var result = [];
 
