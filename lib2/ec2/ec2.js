@@ -164,7 +164,7 @@ ec2.getSnapshots = function(argv_, context, callback) {
   } else {
     _.extend(params, {OwnerIds:_.values(accounts)});
   }
-console.error(params);
+
   return awsServiceLib.describe(params, context, function(err, snapshots) {
     if (err)          { return sg.die(err, callback, 'getSnapshots.describe'); }
 
