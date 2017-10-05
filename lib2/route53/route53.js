@@ -38,7 +38,7 @@ lib.listHostedZones = function(argv_, context, callback) {
   var   u               = sg.prepUsage();
 
   var   argv            = sg.deepCopy(argv_);
-  const nameStr         = argvExtract(argv, 'name,fqdn,re') || 'mobile(web|dev)';
+  const nameStr         = argvExtract(argv, 'name,fqdn,re') || 'mobile(we|de)[bvx]';
   const nameRe          = new RegExp(nameStr, 'i');
 
   var params = _.extend({
@@ -51,7 +51,7 @@ lib.listHostedZones = function(argv_, context, callback) {
     if (err)          { return sg.die(err, callback, 'listHostedZones.list'); }
 
     // Filter out all the extra domain names
-    var zones = _.filter(zones_, function(zone) {
+    var zones = _.filter(zones_.items, function(zone) {
       if (zone.accountName === 'pub' && zone.Name === 'mobilewebprint.net.') { return false; }  // **** This one is a faker
       return !!zone.Name.match(nameRe) && zone.Config.PrivateZone != true;
     });
