@@ -6,27 +6,35 @@
  */
 var sg                  = require('sgsg');
 var _                   = sg._;
-var ra                  = require('run-anywhere');
-var awsJsonLib          = require('aws-json');
+var jsaws               = require('../../lib/jsaws');
+var ra                  = sg.include('run-anywhere')  || require('run-anywhere');
+var awsJsonLib          = sg.include('aws-json')      || require('aws-json');
 var awsServiceLib       = require('../../lib/service/service');
 
+var argvExtract         = sg.argvExtract;
 var die                 = sg.die;
 var awsService          = awsServiceLib.awsService;
 var extractServiceArgs  = awsServiceLib.extractServiceArgs;
+const accounts          = sg.parseOn2Chars(process.env.JSAWS_AWS_ACCTS, ',', ':');
+
+var flattenAndLabel;
 
 var ec2     = {};
-var raEc2;                /* Gets build from the ec2 object at the end of this file */
+var raEc2;                /* Gets built from the ec2 object at the end of this file */
 
 /**
- *  The common part of all of the ec2 describeXyz APIs.
+ *  The common part of all of the ec2 describeXyz-like APIs (also works for listXyz APIs, if
+ *  the caller passes awsFnName.)
  *
  *  This function will take care of all of the multi-account stuff, as well as the until() call
  *  for any of the describe functions.
  */
-var describe = function(argv_, context, awsName, callback, awsFnName_) {
+var describe = function(argv_, context, awsName, callback, awsFnName_, awsServiceName_) {
   var argv            = sg.deepCopy(argv_);
   var awsFnName       = awsFnName_                 || 'describe'+awsName;
   var accts           = (sg.extract(argv, 'accts') || process.env.JSAWS_AWS_ACCT_EXTRA_CREDS || '').split(',');
+  var awsServiceName  = awsServiceName_            || 'EC2';
+  var onlyOneAcct     = sg.extract(argv, 'onlyOneAcct');
 
   var accountItems = {};
 
@@ -37,8 +45,13 @@ var describe = function(argv_, context, awsName, callback, awsFnName_) {
     var acctName  = parts[0];
     var iam       = parts[1];
 
+    // Sometimes you have to force this function only to use one acct
+    if (onlyOneAcct && (onlyOneAcct !== acctName)) {
+      return nextAcct();
+    }
+
     // The AWS EC2 service for the acct
-    var awsEc2 = awsService('EC2', sg.kv('iam', iam));
+    var awsEc2 = awsService(awsServiceName, sg.kv('iam', iam));
 
     // Return results by acct name
     accountItems[acctName] = {};
@@ -53,7 +66,8 @@ var describe = function(argv_, context, awsName, callback, awsFnName_) {
           if (err.code === 'RequestLimitExceeded')    { return again(250); }
 
           /* otherwise */
-          return die(err, callback, 'li2ec2.describe.'+awsName);
+          console.error(argv);
+          return die(err, callback, 'lib2ec2.describe.'+awsName+' with: '+awsFnName+' using: '+iam);
         }
 
         // Fixup the AWS-style JSON
@@ -106,6 +120,81 @@ ec2.getInstances = function(argv, context, callback) {
   });
 };
 
+/**
+ *  describeImages
+ */
+ec2.getImages = function(argv_, context, callback) {
+
+  var   argv            = sg.deepCopy(argv_);
+
+  var params = _.extend({
+    type    : 'Images',
+    fname   : 'describeImages',
+    service : 'EC2'
+  }, argv);
+
+  return jsaws.envInfo({}, context, function(err, envInfo) {
+    if (err)          { return sg.die(err, callback, 'getImages.envInfo'); }
+
+    params.Owners = [envInfo.accountId];
+    return awsServiceLib.describe(params, context, function(err, images) {
+      if (err)          { return sg.die(err, callback, 'getImages.describe'); }
+
+      return callback(null, images);
+    });
+  });
+};
+
+/**
+ *  describeSnapshots
+ */
+ec2.getSnapshots = function(argv_, context, callback) {
+
+  var   argv            = sg.deepCopy(argv_);
+  const onlyOneAcct     = argvExtract(argv, 'only-one-acct');
+
+  var params = _.extend({
+    type    : 'Snapshots',
+    fname   : 'describeSnapshots',
+    service : 'EC2'
+  }, argv);
+
+  if (onlyOneAcct && accounts[onlyOneAcct]) {
+    _.extend(params, {onlyOneAcct, OwnerIds:[accounts[onlyOneAcct]]});
+  } else {
+    _.extend(params, {OwnerIds:_.values(accounts)});
+  }
+
+  return awsServiceLib.describe(params, context, function(err, snapshots) {
+    if (err)          { return sg.die(err, callback, 'getSnapshots.describe'); }
+
+    return callback(null, snapshots);
+  });
+};
+
+/**
+ *  describeVolumes
+ */
+ec2.getVolumes = function(argv_, context, callback) {
+
+  var   argv            = sg.deepCopy(argv_);
+
+  var params = _.extend({
+    type    : 'Volumes',
+    fname   : 'describeVolumes',
+    service : 'EC2'
+  }, argv);
+
+  return awsServiceLib.describe(params, context, function(err, volumes) {
+    if (err)          { return sg.die(err, callback, 'getVolumes.describe'); }
+
+    return callback(null, volumes);
+  });
+};
+
+/**
+ *  The js-aws equivalent of ec2.descriveVpcPeeringConnections
+ */
 ec2.getVpcPeeringConnections = function(argv, context, callback) {
   return describe(argv, context, 'VpcPeeringConnections', function(err, peeringGroup) {
     if (err) { return die(err, callback, 'lib2ec2.getInstances.describe'); }
@@ -125,6 +214,132 @@ ec2.getVpcPeeringConnections = function(argv, context, callback) {
   });
 };
 
+/**
+ *  For all practical purposes, this will assign a FQDN to an instance, but in reality
+ *  what is happening is that the DNS entry remains the same (associated with the EIP),
+ *  but the EIP gets associated with the instance. This is better than waiting for the
+ *  DNS change to propigate.
+ *
+ *  This function looks into all available accounts, and 'just does' the right thing to
+ *  get traffic flowing to the instance.
+ *
+ *      ./assignFqdnToInstance --instance-id=i-02bb9eed506bf6ea0 --fqdn=blue-pub.mobilewebassist.net
+ */
+ec2.moveEipForFqdn = function(argv, context, callback) {
+
+  var instanceId      = argvExtract(argv, 'instance-id,instance,id');
+  var fqdn            = argvExtract(argv, 'fqdn');
+
+  if (!instanceId)      { return sg.die('ENOINSTANCEID', callback, 'moveEipForFqdn'); }
+  if (!fqdn)            { return sg.die('ENOFQDN',       callback, 'moveEipForFqdn'); }
+
+  //
+  // Get all of our Elastic IPs
+  //
+  return describe(argv, context, 'Addresses', function(err, addresses_) {
+    if (err)          { return sg.die(err, callback, 'moveEipForFqdn'); }
+
+    var addresses = flattenAndLabel(addresses_);
+
+    //
+    // On our way to getting all of our DNS entries, we first have to go through the zones
+    //
+
+    // We get all of the zones, and the shorten the list
+    return describe({}, context, 'HostedZones', function(err, zones_) {
+      if (err)          { return sg.die(err, callback, 'moveEipForFqdn.listHostedZones'); }
+
+      // Filter out all the extra domain names
+      var zones = _.filter(flattenAndLabel(zones_), function(zone) {
+        if (zone.accountName === 'pub' && zone.Name === 'mobilewebprint.net.') { return false; }  // **** This one is a faker
+        return !!zone.Name.match(/mobile(web|dev)/i) && zone.Config.PrivateZone != true;
+      });
+
+      // We should have 4 zones now
+
+      // Loop over each of our 4 domain names
+      var resourceRecordSets = [];
+      sg.__each(zones, function(zone, next) {
+
+        // Note that we have to tell `describe()` only to make the call to one account
+        return describe({HostedZoneId: zone.Id, onlyOneAcct: zone.accountName}, context, 'ResourceRecordSets', function(err, rrs) {
+          if (err)          { return sg.die(err, callback, 'moveEipForFqdn.listResourceRecordSets'); }
+
+          // Add to the big-ol list
+          resourceRecordSets = resourceRecordSets.concat(flattenAndLabel(rrs));
+          return next();
+        }, 'listResourceRecordSets', 'Route53');
+
+      }, function() {
+
+        // Collect up all of the 'A' records
+        var rrsForFqdn = [];
+        var cnames = [];
+        _.each(resourceRecordSets, function(resourceRecords) {
+          var rr = resourceRecords;
+
+          if (rr.Type === 'CNAME') {
+            //console.error(rr.Name);
+            if (rr.Name === fqdn+'.') {
+            }
+          } else if (rr.Type === 'A') {
+            //console.error(rr.Name);
+            if (rr.Name === fqdn+'.') {
+              rrsForFqdn.push(rr);
+            }
+          } else if (rr.Type === 'NS' || rr.Type === 'SOA') {
+          } else {
+            console.error('missing', rr);
+          }
+        });
+
+        // Loop over all the records, and addresses and find the match
+        var addrs = [];
+        _.each(rrsForFqdn, function(rrSet) {
+          _.each(rrSet.ResourceRecords, function(rr) {
+            _.each(addresses, function(address) {
+              if (address.PublicIp === rr.Value) {
+                addrs.push(address);
+              }
+            });
+          });
+        });
+
+        if (addrs.length !== 1) {
+          return sg.die('ENOTONE', callback, '');
+        }
+
+        // Note that we have to use onlyOneAcct here, too
+        var aaParams = {AllocationId : addrs[0].AllocationId, InstanceId : instanceId, onlyOneAcct: addrs[0].accountName};
+        return describe(aaParams, context, 'Address', function(err, result) {
+          if (err) { return die(err, callback, 'libEc2.assignFqdnToInstance.associateAddress'); }
+
+          return callback(err, result);
+        }, 'associateAddress');
+
+      });
+    }, 'listHostedZones', 'Route53');
+  });
+};
+
+/**
+ *  Takes the output of the describe() function, and flattens it (one level
+ *  with all the items from all the accts), with each item labeled with
+ *  `accountName`.
+ */
+flattenAndLabel = function(itemses) {
+  var result = [];
+
+  _.each(itemses, function(b) {
+    var accountName = sg.extract(b, 'accountName');
+    _.each(b, function(c) {
+      c.accountName = accountName;
+      result.push(c);
+    });
+  });
+
+  return result;
+};
 
 raEc2 = ra.wrap(ec2);
 
