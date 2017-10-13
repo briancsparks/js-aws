@@ -252,7 +252,7 @@ ec2.moveEipForFqdn = function(argv, context, callback) {
       // Filter out all the extra domain names
       var zones = _.filter(flattenAndLabel(zones_), function(zone) {
         if (zone.accountName === 'pub' && zone.Name === 'mobilewebprint.net.') { return false; }  // **** This one is a faker
-        return !!zone.Name.match(/mobile(web|dev)/i) && zone.Config.PrivateZone != true;
+        return !!zone.Name.match(/mobile(web|dev|wex|dex)/i) && zone.Config.PrivateZone != true;
       });
 
       // We should have 4 zones now
@@ -306,7 +306,7 @@ ec2.moveEipForFqdn = function(argv, context, callback) {
         });
 
         if (addrs.length !== 1) {
-          return sg.die('ENOTONE', callback, '');
+          return sg.die('ENOTONE', callback, addrs.join(','));
         }
 
         // Note that we have to use onlyOneAcct here, too
