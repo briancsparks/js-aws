@@ -1,0 +1,14 @@
+#!/bin/bash -e
+
+eval "$(cli-shezargs $@)"
+
+[[ -n $1 ]] && bucket="$1" && shift
+[[ -n $1 ]] && key="$1" && shift
+
+[[ -n $max_keys ]] && page_size="$max_keys"
+
+[[ -n $page_size ]] && aws_args="$aws_args --page-size $page_size"
+
+echo aws s3 ls "s3://${bucket}/${key}" $aws_args
+aws s3 ls "s3://${bucket}/${key}" $aws_args
+
