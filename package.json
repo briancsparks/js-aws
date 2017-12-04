@@ -1,6 +1,6 @@
 {
   "name": "js-aws",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Full JavaScriptification of AWS.",
   "main": "lib/jsaws.js",
   "scripts": {
@@ -17,14 +17,14 @@
   },
   "homepage": "https://github.com/briancsparks/js-aws#readme",
   "dependencies": {
-    "aws-json": "https://github.com/briancsparks/aws-json/tarball/master",
+    "aws-json": "0.0.3",
     "aws-sdk": "^2.6.3",
     "aws-xray-sdk": "^1.0.6-beta",
     "body-parser": "^1.15.2",
     "debug": "^2.6.0",
     "express": "^4.14.0",
-    "js-mongo": "https://github.com/briancsparks/js-mongo/tarball/master",
-    "nginx-json": "https://github.com/briancsparks/nginx-json/tarball/master",
+    "js-mongo": "^0.1.1",
+    "nginx-json": "^0.7.4",
     "routes": "^2.1.0",
     "run-anywhere": "^0.1.4",
     "sgsg": "^0.9.14",
