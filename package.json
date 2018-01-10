@@ -1,6 +1,6 @@
 {
   "name": "js-aws",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Full JavaScriptification of AWS.",
   "main": "lib/jsaws.js",
   "scripts": {
