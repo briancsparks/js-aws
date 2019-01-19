@@ -31,7 +31,7 @@
     "shelljs": "^0.7.4",
     "socket.io": "^1.7.2",
     "socket.io-client": "^1.7.2",
-    "superagent": "^2.3.0",
+    "superagent": "^4.1.0",
     "underscore": "^1.8.3"
   }
 }
